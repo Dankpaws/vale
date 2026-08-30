@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Saved posts · Vale{% endblock %}
+
+{% block content %}
+<div id="column_one" class="simple-page saved-page">
+	<header class="page-hero saved-hero">
+		<div>
+			<span class="eyebrow">YOUR PROFILE</span>
+			<h1>Saved posts</h1>
+			<p>Immutable local snapshots that remain readable without Reddit. Each archive includes a standalone reader, structured manifest, comments, and captured media.</p>
+		</div>
+	</header>
+	<dl class="archive-metrics saved-storage-metrics" aria-label="Archive storage">
+		<div><dt>Used</dt><dd>{{ quota.used_size }}</dd></div>
+		<div><dt>Temporarily reserved</dt><dd>{{ quota.reserved_size }}</dd></div>
+		<div><dt>Effective limit</dt><dd>{{ quota.effective_limit_size }}</dd></div>
+		<div><dt>Instance maximum</dt><dd>{{ quota.instance_limit_size }}</dd></div>
+	</dl>
+	{% if quota.is_over_budget %}
+	<p class="archive-capacity-warning"><strong>This profile is {{ quota.over_by_size }} over its effective limit.</strong> Existing saves remain readable; new captures and retries are paused. <a href="/settings#archive-storage">Delete archives or adjust archive storage settings.</a></p>
+	{% else if quota.instance_exhausted %}
+	<p class="archive-capacity-warning"><strong>The shared instance archive allowance is exhausted.</strong> Existing saves remain readable. <a href="/settings#archive-storage">Review archive storage and recovery options.</a></p>
+	{% endif %}
+
+	{% if entries.is_empty() %}
+	<section class="empty-feed-state">
+		<span aria-hidden="true">◇</span>
+		<strong>No permanent saves yet.</strong>
+		<p>Open a local discussion and choose <b>Save offline</b> to preserve it on this Vale machine.</p>
+		<a class="primary-button" href="/">Browse your feed</a>
+	</section>
+	{% else %}
+	<section class="saved-list" aria-label="Permanently saved posts">
+		{% for entry in entries %}
+		<article class="saved-item">
+			<div class="saved-item-copy">
+				<div class="saved-item-meta">
+					<span class="archive-status archive-status-{{ entry.status }}">{{ entry.status_label }}</span>
+					{% if !entry.community.is_empty() %}<a href="/r/{{ entry.community }}">r/{{ entry.community }}</a>{% endif %}
+					<span>{{ entry.created }}</span>
+				</div>
+				<a class="saved-title" id="saved-{{ entry.id }}" href="/saved/{{ entry.id }}">{% if entry.title.is_empty() %}Capturing post {{ entry.post_id }}…{% else %}{{ entry.title }}{% endif %}</a>
+				<p>
+					{% if entry.is_viewable() %}{{ entry.comment_count }} {% if entry.comment_count == 1 %}comment{% else %}comments{% endif %} <span aria-hidden="true">·</span> {{ entry.local_file_count }} local {% if entry.local_file_count == 1 %}file{% else %}files{% endif %} <span aria-hidden="true">·</span> {{ entry.total_size }}{% else if entry.is_pending() %}The local worker is collecting the post, comments, and media.{% else %}Open the capture report for recovery options.{% endif %}
+				</p>
+			</div>
+			<a class="quiet-button" href="/saved/{{ entry.id }}">{% if entry.is_viewable() %}Open archive{% else %}View status{% endif %}</a>
+		</article>
+		{% endfor %}
+	</section>
+	{% endif %}
+</div>
+{% endblock %}

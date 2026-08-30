@@ -1,0 +1,24 @@
+{
+	"name": "Vale",
+	"short_name": "Vale",
+	"display": "standalone",
+	"background_color": "#050c11",
+	"description": "A quiet, private window into the Reddit communities you choose",
+	"theme_color": "#050c11",
+	"start_url": "/",
+	"icons": [
+		{
+			"src": "logo.png",
+			"sizes": "512x512",
+			"type": "image/png"
+		},
+		{
+			"src": "apple-touch-icon.png",
+			"sizes": "180x180"
+		},
+		{
+			"src": "favicon.ico",
+			"sizes": "32x32"
+		}
+	]
+}

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en" data-vale-reader-version="{{ manifest.reader_version }}">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<meta name="robots" content="noindex,nofollow">
+	<meta name="referrer" content="no-referrer">
+	<meta http-equiv="Content-Security-Policy" content="{{ csp|safe }}">
+	<title>{{ manifest.post.title }} · Vale archive</title>
+	<style>{{ css|safe }}</style>
+</head>
+<body>
+	<header class="archive-header">
+		<a class="archive-brand" href="./"><img src="files/reader/vale-mark.svg" alt=""><span>Vale archive</span></a>
+		<div>
+			<strong>Immutable local snapshot</strong>
+			<span>Captured {{ crate::archive::format_timestamp(manifest.captured_at) }}</span>
+		</div>
+		<a class="archive-manifest-link" href="manifest.json">manifest.json</a>
+	</header>
+	<main>
+		{% if !manifest.issues.is_empty() %}
+		<section class="archive-report" aria-labelledby="capture-report-title">
+			<div>
+				<span class="archive-report-mark" aria-hidden="true">!</span>
+				<div><h2 id="capture-report-title">Saved with documented omissions</h2><p>The local snapshot remains readable. These resources were unavailable or exceeded a safety boundary.</p></div>
+			</div>
+			<details>
+				<summary>Review {{ manifest.issues.len() }} capture {% if manifest.issues.len() == 1 %}note{% else %}notes{% endif %}</summary>
+				<ul>{% for issue in manifest.issues %}<li><strong>{{ issue.area }}</strong> — {{ issue.message }}</li>{% endfor %}</ul>
+			</details>
+		</section>
+		{% endif %}
+
+		<article class="archive-post">
+			<header class="archive-post-meta">
+				<a href="https://www.reddit.com/r/{{ manifest.post.community }}">r/{{ manifest.post.community }}</a>
+				<span aria-hidden="true">·</span>
+				<span>u/{{ manifest.post.author }}</span>
+				<span aria-hidden="true">·</span>
+				<time>{{ manifest.post.created }}</time>
+			</header>
+			<h1>{{ manifest.post.title }}</h1>
+			<div class="archive-score"><strong>{{ manifest.post.score }}</strong> {% if manifest.post.score == 1 %}point{% else %}points{% endif %} <span aria-hidden="true">·</span> {{ manifest.post.upvote_ratio }}% upvoted</div>
+
+			{% if !manifest.post.media.is_empty() %}
+			<section class="archive-media" aria-label="Archived post media">
+				{% for media in manifest.post.media %}
+					{% if media.kind == "image" %}
+					<figure><a href="{{ media.path }}"><img src="{{ media.path }}" alt="Archived post image" loading="lazy"></a>{% if !media.caption.is_empty() %}<figcaption>{{ media.caption }}</figcaption>{% endif %}</figure>
+					{% else %}
+					<figure><video src="{{ media.path }}" controls preload="metadata" playsinline {% if media.kind == "gif" %}muted loop autoplay{% endif %}></video>{% if !media.caption.is_empty() %}<figcaption>{{ media.caption }}</figcaption>{% endif %}</figure>
+					{% endif %}
+				{% endfor %}
+			</section>
+			{% endif %}
+
+			{% if !manifest.post.body_html.is_empty() %}
+			<section class="archive-post-body">{{ manifest.post.body_html|safe }}</section>
+			{% endif %}
+
+			<nav class="archive-source-links" aria-label="Original sources">
+				<a href="https://www.reddit.com{{ manifest.post.permalink }}">Original Reddit permalink</a>
+				{% if !manifest.post.source_url.is_empty() %}<a href="{{ manifest.post.source_url }}">Original outbound source</a>{% endif %}
+				{% if !manifest.post.source_snapshot.is_empty() %}<a class="archive-local-source" href="{{ manifest.post.source_snapshot }}">Open locally captured source</a>{% endif %}
+			</nav>
+		</article>
+
+		<section class="archive-comments" aria-labelledby="archive-comments-title">
+			<header>
+				<span class="archive-eyebrow">CAPTURED DISCUSSION</span>
+				<h2 id="archive-comments-title">{{ manifest.comment_count }} {% if manifest.comment_count == 1 %}comment{% else %}comments{% endif %}</h2>
+				<p>Sibling comments are ordered by their score at capture time. Reply trees retain their original relationships.</p>
+			</header>
+			{% if manifest.comments.is_empty() %}
+			<p class="archive-empty">No comments were available when this snapshot was made.</p>
+			{% else %}
+				{% for comment in manifest.comments -%}{{ comment.render().unwrap_or_default()|safe }}{%- endfor %}
+			{% endif %}
+		</section>
+	</main>
+	<footer>
+		<p>Generated as a standalone, private Vale archive. Media and discussion files are relative to this document.</p>
+		<p>Vale preserves Redlib engine attribution and is distributed under AGPL-3.0.</p>
+		<nav aria-label="Offline licenses"><a href="files/reader/AGPL-3.0.txt">AGPL-3.0 license</a><a href="files/reader/OFL.txt">Source font license</a><a href="manifest.json">Archive manifest</a></nav>
+	</footer>
+</body>
+</html>

@@ -1,0 +1,90 @@
+{
+  "data": {
+    "children": [
+      {
+        "kind": "t1",
+        "data": {
+          "id": "root-a",
+          "name": "t1_root-a",
+          "parent_id": "t3_post",
+          "author": "root-user",
+          "body": "Root body",
+          "body_html": "<div class=\"md\"><p>Root body</p></div>",
+          "created_utc": 1700000000.0,
+          "score": 42,
+          "replies": {
+            "data": {
+              "children": [
+                {
+                  "kind": "t1",
+                  "data": {
+                    "id": "child-a",
+                    "name": "t1_child-a",
+                    "parent_id": "t1_root-a",
+                    "author": "child-user",
+                    "body": "Child body",
+                    "body_html": "<div class=\"md\"><p>Child body</p></div>",
+                    "created_utc": 1700000001.0,
+                    "score": 21,
+                    "replies": {
+                      "data": {
+                        "children": [
+                          {
+                            "kind": "more",
+                            "data": {
+                              "id": "_",
+                              "parent_id": "t1_child-a",
+                              "count": 2,
+                              "children": ["deep-a", "deep-b"]
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "kind": "t1",
+        "data": {
+          "id": "root-b",
+          "name": "t1_root-b",
+          "parent_id": "t3_post",
+          "author": "filtered-user",
+          "body": "Filtered author body",
+          "body_html": "<div class=\"md\"><p>Filtered author body</p></div>",
+          "created_utc": 1700000002.0,
+          "score": 8,
+          "replies": ""
+        }
+      },
+      {
+        "kind": "t1",
+        "data": {
+          "id": "root-c",
+          "name": "t1_root-c",
+          "parent_id": "t3_post",
+          "author": "keyword-user",
+          "body": "This contains a spoiler phrase.",
+          "body_html": "<div class=\"md\"><p>This contains a spoiler phrase.</p></div>",
+          "created_utc": 1700000003.0,
+          "score": 5,
+          "replies": ""
+        }
+      },
+      {
+        "kind": "more",
+        "data": {
+          "id": "_",
+          "parent_id": "t3_post",
+          "count": 3,
+          "children": []
+        }
+      }
+    ]
+  }
+}

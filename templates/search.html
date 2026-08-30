@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}{% if params.has_query %}Search: {{ params.q }}{% else %}Search{% endif %} · Vale{% endblock %}
+
+{% block subscriptions %}
+	{% call utils::sub_list("") %}
+{% endblock %}
+
+{% block content %}
+	<div id="column_one" class="search-results-page">
+		<header class="page-hero search-hero">
+			<h1>Search</h1>
+			{% if params.has_query %}
+			<p>Results for “{{ params.q }}” in <strong>{{ params.scope_label }}</strong>.</p>
+			{% else %}
+			<p>Search <strong>{{ params.scope_label }}</strong>. Your active named feed is the default.</p>
+			{% endif %}
+		</header>
+
+		{% if sub.is_empty() %}
+		<nav class="search-scope" aria-label="Search scope">
+			<a href="{{ feed_scope_url }}"{% if params.scope == "feed" %} class="is-active" aria-current="page"{% endif %}>{{ active_feed_name }}</a>
+			<a href="{{ all_scope_url }}"{% if params.scope == "all" %} class="is-active" aria-current="page"{% endif %}>All Reddit</a>
+		</nav>
+		{% endif %}
+
+		<form id="search_sort" class="search-form" action="{% if sub.is_empty() %}/search{% else %}/r/{{ sub }}/search{% endif %}" method="GET" role="search">
+			<label for="search">Search query</label>
+			<div class="search-query-row">
+				<input id="search" type="search" name="q" placeholder="Search posts and communities" value="{{ params.q }}" autocomplete="off">
+				<button class="primary-button" type="submit">Search</button>
+			</div>
+			{% if sub.is_empty() %}
+			<input type="hidden" name="scope" value="{{ params.scope }}">
+			{% if params.scope == "feed" %}<input type="hidden" name="feed" value="{{ params.feed }}">{% endif %}
+			{% else %}
+			<label class="search-community-scope" for="restrict_sr"><input type="checkbox" name="restrict_sr" id="restrict_sr"{% if params.restrict_sr != "" %} checked{% endif %}> Search only r/{{ sub }}</label>
+			{% endif %}
+			{% if params.typed == "sr_user" %}<input type="hidden" name="type" value="sr_user">{% endif %}
+			<div class="search-sort-row">
+				<label for="search-sort">Sort</label>
+				<select id="search-sort" name="sort">
+					{% call utils::options(params.sort, ["relevance", "hot", "top", "new", "comments"], "relevance") %}
+				</select>
+				{% if params.sort != "new" %}
+				<label for="search-timeframe">Timeframe</label>
+				<select id="search-timeframe" name="t">
+					{% call utils::options(params.t, ["hour", "day", "week", "month", "year", "all"], "all") %}
+				</select>
+				{% endif %}
+			</div>
+		</form>
+
+		{% if params.has_query %}
+			{% if !is_filtered && (subreddits.len() > 0 || params.typed == "sr_user") %}
+			<section id="search_subreddits" aria-labelledby="community-results-heading">
+				<h2 id="community-results-heading">Communities</h2>
+				{% if params.typed == "sr_user" %}
+				<a href="{{ all_scope_url }}" class="search_subreddit" id="more_subreddits">← Back to post results</a>
+				{% endif %}
+				{% for subreddit in subreddits %}
+				<a href="{{ subreddit.url }}" class="search_subreddit">
+					<div class="search_subreddit_left">{% if subreddit.icon != "" %}<img loading="lazy" src="{{ subreddit.icon }}" alt="">{% endif %}</div>
+					<div class="search_subreddit_right">
+						<p class="search_subreddit_header">
+							<span class="search_subreddit_name">r/{{ subreddit.name }}</span>
+							<span class="dot">&bull;</span>
+							<span class="search_subreddit_members" title="{{ subreddit.subscribers.1 }} members">{{ subreddit.subscribers.0 }} members</span>
+						</p>
+						<p class="search-result-context">Community · {{ crate::search::membership_label(prefs, active_feed, subreddit.name) }}</p>
+						<p class="search_subreddit_description">{{ subreddit.description }}</p>
+					</div>
+				</a>
+				{% endfor %}
+				{% if params.typed != "sr_user" %}
+				<a href="{{ all_scope_url }}&type=sr_user" class="search_subreddit" id="more_subreddits">More community results →</a>
+				{% endif %}
+			</section>
+			{% endif %}
+
+			{% if all_posts_hidden_nsfw %}
+			<p class="listing_warn">All posts on this page are hidden because they are NSFW. Enable “Show NSFW posts” in settings to view them.</p>
+			{% endif %}
+
+			{% if feed_empty %}
+			<div class="empty-feed-state"><span aria-hidden="true">✦</span><strong>{{ params.scope_label }} has no communities yet.</strong><p>Add a community before searching this feed.</p><a class="primary-button" href="/feeds">Manage feeds</a></div>
+			{% else if no_posts %}
+			<div class="search-empty"><strong>No posts found in {{ params.scope_label }}.</strong><p>Try another query or switch the search scope above.</p></div>
+			{% endif %}
+
+			{% if all_posts_filtered %}
+			<p class="listing_warn">All content on this page has been filtered.</p>
+			{% else if is_filtered %}
+			<p class="listing_warn">This search scope is filtered.</p>
+			{% else if params.typed != "sr_user" %}
+			<div id="posts" class="search-results" data-vale-listing="posts-v1" data-vale-render-kind="search" data-listing-status="{{ listing_status }}" data-visible-count="{{ visible_count }}">
+			{% for post in posts %}
+				{% if post.flags.nsfw && prefs.show_nsfw != "on" %}
+				{% else if !post.title.is_empty() %}
+					<div class="search-result-entry" data-vale-search-result="1">
+						<p class="search-result-context">Post · {{ crate::search::membership_label(prefs, active_feed, post.community) }}</p>
+						{% call utils::post_in_list(post) %}
+					</div>
+				{% else %}
+					<article class="comment listing-comment">
+						<div class="comment_left"><p class="comment_score" title="{{ post.score.1 }}">{% if prefs.hide_score != "on" %}{{ post.score.0 }}{% else %}&#x2022;{% endif %}</p><div class="line"></div></div>
+						<details class="comment_right" open>
+							<summary class="comment_data"><a class="comment_link" href="{{ post.permalink }}">Comment</a><span class="created" title="{{ post.created }}">{{ post.rel_time }}</span></summary>
+							<p class="search-result-context">Comment · {{ crate::search::membership_label(prefs, active_feed, post.community) }}</p>
+							<div class="comment_body">{{ post.body|safe }}</div>
+						</details>
+					</article>
+				{% endif %}
+			{% endfor %}
+			</div>
+			{% endif %}
+
+			{% if params.typed != "sr_user" %}
+			<footer class="listing-pagination" aria-label="Search result pages" data-listing-pagination>
+				{% if !previous_url.is_empty() %}<a href="{{ previous_url }}" rel="prev" accesskey="P">Previous page</a>{% endif %}
+				{% if !next_url.is_empty() %}<a href="{{ next_url }}" rel="next" accesskey="N">Next page</a>{% endif %}
+			</footer>
+			<p class="listing-status-message" data-listing-status-message{% if listing_status == "complete" %} hidden{% endif %}>{% if listing_status == "retry" %}Vale could not finish refreshing this listing. Retry to check for more posts.{% else if listing_status == "end" %}You’ve reached the end of this listing.{% endif %}</p>
+			{% endif %}
+		{% endif %}
+	</div>
+{% endblock %}

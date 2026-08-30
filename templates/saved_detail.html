@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}{% if entry.title.is_empty() %}Saved-post capture{% else %}{{ entry.title }}{% endif %} · Vale{% endblock %}
+
+{% block content %}
+<div id="column_one" class="simple-page saved-detail-page">
+	<header class="page-hero saved-detail-hero">
+		<div>
+			<span class="archive-status archive-status-{{ entry.status }}">{{ entry.status_label }}</span>
+			<a class="page-back-link" href="/saved#saved-{{ entry.id }}"><span aria-hidden="true">←</span><span>Back to saved posts</span></a>
+			<h1>{% if entry.title.is_empty() %}Capturing post {{ entry.post_id }}{% else %}{{ entry.title }}{% endif %}</h1>
+			<p>{% if !entry.community.is_empty() %}r/{{ entry.community }} <span aria-hidden="true">·</span> {% endif %}Queued {{ entry.created }}{% if !entry.captured.is_empty() %} <span aria-hidden="true">·</span> captured {{ entry.captured }}{% endif %}</p>
+		</div>
+	</header>
+
+	{% if entry.is_pending() %}
+	<section class="capture-progress-card" aria-live="polite">
+		<span class="capture-spinner" aria-hidden="true"></span>
+		<div><strong>{{ entry.status_label }}</strong><p>One bounded worker is collecting the post, expanding available comment branches, and writing local media. This page refreshes automatically.</p></div>
+	</section>
+	{% else if entry.status == "failed" %}
+	<section class="capture-error-card">
+		<strong>Nothing incomplete is being presented as an archive.</strong>
+		<p>{{ entry.error }}</p>
+		<form action="/posts/{{ entry.post_id }}/archive" method="POST"><button class="primary-button">Retry capture</button></form>
+	</section>
+	{% else if entry.is_viewable() %}
+	<dl class="archive-metrics saved-summary-card" aria-label="Archive details">
+		<div><dt>Comments</dt><dd>{{ entry.comment_count }}</dd></div>
+		<div><dt>Local files</dt><dd>{{ entry.local_file_count }}</dd></div>
+		<div><dt>Stored size</dt><dd>{{ entry.total_size }}</dd></div>
+	</dl>
+	<div class="saved-detail-actions">
+		<a class="primary-button" href="/saved/{{ entry.id }}/view.html">Read local snapshot</a>
+		<a class="quiet-button" href="/saved/{{ entry.id }}/manifest.json">Inspect manifest</a>
+		{% if !entry.permalink.is_empty() %}<a class="quiet-button" href="{{ entry.permalink }}">Open current Vale post</a>{% endif %}
+	</div>
+
+	{% if !entry.issues.is_empty() %}
+	<section class="capture-issues" aria-labelledby="capture-issues-title">
+		<header><span class="eyebrow">CAPTURE REPORT</span><h2 id="capture-issues-title">Documented omissions</h2><p>The saved reader is available, but Vale could not honestly mark this snapshot complete.</p></header>
+		<ul>{% for issue in entry.issues %}<li><strong>{{ issue.area }}</strong><span>{{ issue.message }}</span></li>{% endfor %}</ul>
+	</section>
+	{% else %}
+	<section class="capture-complete-card"><span aria-hidden="true">✓</span><div><strong>Capture completed within every configured boundary.</strong><p>The manifest contains checksums and source addresses for each local asset.</p></div></section>
+	{% endif %}
+	{% else %}
+	<section class="capture-error-card">
+		<strong>The archive remains accounted for and needs recovery.</strong>
+		<p>{{ entry.error }}</p>
+		<p>Deletion retries file cleanup before releasing any storage accounting.</p>
+	</section>
+	{% endif %}
+
+	{% if !entry.is_pending() %}
+	<section class="saved-danger-zone">
+		<div><strong>Remove this archive</strong><p>This deletes the profile record and its durable local files. It does not affect Reddit or reading history.</p></div>
+		<form action="/saved/{{ entry.id }}/delete" method="POST"><button class="quiet-button danger-button" onclick="return confirm('Permanently delete this local archive and all of its files?')">Delete archive</button></form>
+	</section>
+	{% endif %}
+</div>
+{% endblock %}

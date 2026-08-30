@@ -1,0 +1,103 @@
+{% import "utils.html" as utils %}
+
+<!DOCTYPE html>
+<html lang="en" class="vale-document" data-theme="{{ prefs.theme }}">
+	<head>
+		{% block head %}
+		<title>{% block title %}Vale{% endblock %}</title>
+		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+		<meta name="description" content="A quiet, private window into the Reddit communities you choose.">
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+		{% if crate::utils::disable_indexing() %}
+		<meta name="robots" content="noindex, nofollow">
+		{% endif %}
+		{% if prefs.theme == "dark" %}
+		<meta name="theme-color" content="#050c11">
+		{% else if prefs.theme == "light" %}
+		<meta name="theme-color" content="#edf1f8">
+		{% else %}
+		<meta name="theme-color" content="#edf1f8" media="(prefers-color-scheme: light)">
+		<meta name="theme-color" content="#050c11" media="(prefers-color-scheme: dark)">
+		{% endif %}
+		<meta name="apple-mobile-web-app-title" content="Vale">
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+		<meta name="mobile-web-app-capable" content="yes">
+		<link href="/touch-icon-iphone.png" rel="apple-touch-icon">
+		<link rel="search" type="application/opensearchdescription+xml" title="Search Vale" href="/opensearch.xml">
+		<link rel="manifest" type="application/json" href="/manifest.json">
+		<link rel="icon" type="image/svg+xml" href="/vale-mark.svg">
+		<link rel="shortcut icon" type="image/x-icon" href="/favicon.ico">
+			<link rel="stylesheet" type="text/css" href="/style.css?v={{ env!("CARGO_PKG_VERSION") }}-vale-v60">
+			<script src="/register-sw.js" defer></script>
+			<script src="/playHLSVideo.js?v={{ env!("CARGO_PKG_VERSION") }}-v7" defer></script>
+			<script src="/vale-interactions.js?v={{ env!("CARGO_PKG_VERSION") }}-v42" defer></script>
+			<meta name="vale-video-quality" content="{{ prefs.video_quality }}">
+		{% endblock %}
+	</head>
+	<body class="vale-ui"
+		data-keyboard-navigation="{{ prefs.keyboard_navigation }}"
+		data-key-next-post="{{ prefs.key_next_post }}"
+		data-key-previous-post="{{ prefs.key_previous_post }}"
+		data-key-open-post="{{ prefs.key_open_post }}"
+		data-key-toggle-preview="{{ prefs.key_toggle_preview }}"
+		data-key-hide-post="{{ prefs.key_hide_post }}"
+		data-media-autoplay="{{ prefs.autoplay_videos }}">
+		<a class="skip-link" href="#main-content">Skip to content</a>
+		<div class="page-scene" aria-hidden="true"></div>
+		<header class="app-header">
+			<div class="app-header-inner">
+				<a class="brand{% if crate::utils::is_canonical_feed_home(url) %} is-active{% endif %}" href="/" aria-label="Vale home"{% if crate::utils::is_canonical_feed_home(url) %} aria-current="page"{% endif %}>
+					<span class="brand-mark-frame" aria-hidden="true"><img class="brand-mark" src="/vale-mark.svg" alt="" width="38" height="38"></span>
+					<strong class="brand-name">Vale</strong>
+				</a>
+
+				<nav class="primary-nav" aria-label="Primary navigation">
+					<a class="nav-link{% if url.starts_with("/subscriptions") || url.starts_with("/feeds") %} is-active{% endif %}" href="/feeds" aria-label="Feeds"{% if url.starts_with("/subscriptions") || url.starts_with("/feeds") %} aria-current="page"{% endif %}>
+						<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"></circle><circle cx="17" cy="10" r="2.25"></circle><path d="M3.5 19c.35-3.35 2.2-5 5.5-5s5.15 1.65 5.5 5"></path><path d="M14.5 15c2.9-.45 4.85.75 5.5 3.5"></path></svg>
+						<span>Feeds</span>
+					</a>
+					<a class="nav-link{% if url.starts_with("/saved") %} is-active{% endif %}" href="/saved" aria-label="Saved"{% if url.starts_with("/saved") %} aria-current="page"{% endif %}>
+						<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21l-6-3.8L6 21V4.5Z"></path></svg>
+						<span>Saved</span>
+					</a>
+				</nav>
+
+				<form class="header-search" action="/search" role="search">
+					<label class="sr-only" for="header-search-input">Search Vale</label>
+					<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m15.4 15.4 4.6 4.6"></path></svg>
+					<input id="header-search-input" name="q" type="search" placeholder="Search Vale" autocomplete="off">
+					<input type="hidden" name="scope" value="feed">
+					<input type="hidden" name="feed" value="{{ prefs.active_feed }}">
+					<input type="hidden" name="sort" value="relevance">
+					<button type="submit" aria-label="Submit search">
+						<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13"></path><path d="m14 7 5 5-5 5"></path></svg>
+					</button>
+				</form>
+				<a class="header-search-mobile{% if url.starts_with("/search") %} is-active{% endif %}" href="/search" aria-label="Search Vale"{% if url.starts_with("/search") %} aria-current="page"{% endif %}>
+					<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m15.4 15.4 4.6 4.6"></path></svg>
+				</a>
+
+				<div class="header-utilities">
+					<a class="account-control{% if url.starts_with("/settings") %} is-active{% endif %}" href="/settings" aria-label="Account and settings"{% if url.starts_with("/settings") %} aria-current="page"{% endif %}>
+						<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.25"></circle><path d="M5.5 20c.45-4.1 2.6-6.15 6.5-6.15S18.05 15.9 18.5 20"></path></svg>
+					</a>
+				</div>
+			</div>
+		</header>
+
+		<div class="app-canvas" id="main-content" tabindex="-1">
+			{% block body %}
+			<main>
+				{% block content %}{% endblock %}
+			</main>
+			{% endblock %}
+
+			{% block footer %}
+			<footer class="app-footer">
+				<p>Vale · powered by the Redlib engine · AGPL-3.0</p>
+			</footer>
+			{% endblock %}
+		</div>
+	</body>
+</html>

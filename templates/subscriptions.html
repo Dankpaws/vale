@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Feeds · Vale{% endblock %}
+
+{% block content %}
+<div id="column_one" class="simple-page feeds-page">
+	<header class="page-hero">
+		<h1>Feeds</h1>
+		<p>Separate communities by mood or subject, then switch feeds without mixing them together.</p>
+	</header>
+
+	{% if feed_groups.is_empty() %}
+	<section class="feed-onboarding" aria-labelledby="feed-onboarding-title">
+		<div>
+			<span class="feed-onboarding-icon" aria-hidden="true">✦</span>
+			<h2 id="feed-onboarding-title">Turn My feed into focused spaces.</h2>
+			<p>Your first named feed starts with all {{ prefs.subscriptions.len() }} communities you currently follow. After that, new feeds begin empty.</p>
+		</div>
+		<form class="feed-create-form" action="/feeds" method="POST">
+			<input type="hidden" name="intent" value="create">
+			<input type="hidden" name="return_to" value="/feeds">
+			<label for="first-feed-name">Name your current feed</label>
+			<div><input id="first-feed-name" name="feed_name" maxlength="40" placeholder="Programming" required><button class="primary-button">Create feed</button></div>
+		</form>
+	</section>
+	{% else %}
+	<section class="feed-manager" aria-labelledby="feed-manager-title">
+		<div class="section-heading">
+			<div><h2 id="feed-manager-title">{{ feed_groups.len() }} named {% if feed_groups.len() == 1 %}feed{% else %}feeds{% endif %}</h2></div>
+		</div>
+		<div class="feed-group-grid">
+		{% for feed in feed_groups %}
+			<article class="feed-group-card{% if feed.slug == active_feed %} is-active{% endif %}">
+				<header>
+					<div><span class="feed-color" aria-hidden="true"></span><strong>{{ feed.name }}</strong><small>{{ feed.communities.len() }} {% if feed.communities.len() == 1 %}community{% else %}communities{% endif %}</small></div>
+					{% if feed.slug == active_feed %}
+					<span class="active-feed-badge">Active</span>
+					{% else %}
+					<form action="/feeds" method="POST">
+						<input type="hidden" name="intent" value="activate"><input type="hidden" name="feed_slug" value="{{ feed.slug }}"><input type="hidden" name="return_to" value="/feeds">
+						<button class="quiet-button">Use feed</button>
+					</form>
+					{% endif %}
+				</header>
+
+				<div class="feed-community-list">
+				{% for community in feed.communities %}
+					<div class="feed-community-chip">
+						<a href="/r/{{ community }}">r/{{ community }}</a>
+						<form action="/feeds" method="POST">
+							<input type="hidden" name="intent" value="remove"><input type="hidden" name="feed_slug" value="{{ feed.slug }}"><input type="hidden" name="community" value="{{ community }}"><input type="hidden" name="return_to" value="/feeds">
+							<button aria-label="Remove r/{{ community }} from {{ feed.name }}">×</button>
+						</form>
+					</div>
+				{% endfor %}
+				{% if feed.communities.is_empty() %}<p class="empty-feed-copy">No communities yet. Add one below.</p>{% endif %}
+				</div>
+
+				<form class="feed-add-form" action="/feeds" method="POST">
+					<input type="hidden" name="intent" value="add"><input type="hidden" name="feed_slug" value="{{ feed.slug }}"><input type="hidden" name="return_to" value="/feeds">
+					<label for="add-{{ feed.slug }}">Add or move a community</label>
+					<div><input id="add-{{ feed.slug }}" name="community" placeholder="r/AnimeNews" required><button class="quiet-button">Add</button></div>
+				</form>
+
+				<footer>
+					<form class="feed-rename-form" action="/feeds" method="POST">
+						<input type="hidden" name="intent" value="rename"><input type="hidden" name="feed_slug" value="{{ feed.slug }}"><input type="hidden" name="return_to" value="/feeds">
+						<label for="rename-{{ feed.slug }}">Rename</label><div><input id="rename-{{ feed.slug }}" name="feed_name" maxlength="40" value="{{ feed.name }}" required><button>Save</button></div>
+					</form>
+					<form action="/feeds" method="POST">
+						<input type="hidden" name="intent" value="delete"><input type="hidden" name="feed_slug" value="{{ feed.slug }}"><input type="hidden" name="return_to" value="/feeds">
+						<button class="feed-delete-button" aria-label="Delete {{ feed.name }}" onclick="return confirm('Delete this feed? Your followed communities will stay followed.')">Delete feed</button>
+					</form>
+				</footer>
+			</article>
+		{% endfor %}
+		</div>
+
+		<form class="feed-create-inline" action="/feeds" method="POST">
+			<input type="hidden" name="intent" value="create"><input type="hidden" name="return_to" value="/feeds">
+			<div><strong>Add another feed</strong><small>New feeds begin empty so topics stay separate.</small></div>
+			<div><input name="feed_name" maxlength="40" placeholder="Anime news" required><button class="primary-button">Create</button></div>
+		</form>
+		<p class="feed-rule-note"><span aria-hidden="true">↔</span> A community belongs to one named feed at a time. Adding it elsewhere moves it automatically.</p>
+	</section>
+	{% endif %}
+
+	<section class="community-panel" aria-labelledby="community-list-title">
+		<div class="section-heading">
+			<div><h2 id="community-list-title">{{ prefs.subscriptions.len() }} followed {% if prefs.subscriptions.len() == 1 %}community{% else %}communities{% endif %}</h2></div>
+			<a class="primary-button" href="/search?scope=all&amp;sort=relevance&amp;type=sr_user">Find a community</a>
+		</div>
+		{% if !unassigned.is_empty() && !feed_groups.is_empty() %}
+		<p class="unassigned-note">{{ unassigned.len() }} followed {% if unassigned.len() == 1 %}community is{% else %}communities are{% endif %} not assigned to a named feed yet.</p>
+		{% endif %}
+		<div class="community-grid">
+		{% for sub in prefs.subscriptions %}
+			<article class="community-card">
+				<a class="community-main" href="/r/{{ sub }}">
+					<span class="community-avatar" aria-hidden="true">{{ sub.get(0..1).unwrap_or_default().to_uppercase() }}</span>
+					<span><strong>r/{{ sub }}</strong><small>Open community</small></span>
+				</a>
+				<form action="/r/{{ sub }}/unsubscribe/?redirect=feeds" method="POST">
+					<button class="quiet-button" title="Remove r/{{ sub }} from followed communities">Following</button>
+				</form>
+			</article>
+		{% endfor %}
+		</div>
+	</section>
+</div>
+{% endblock %}

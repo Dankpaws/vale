@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Create owner profile · Vale{% endblock %}
+
+{% block body %}
+<main class="auth-page setup-page">
+	<section class="auth-card setup-card" aria-labelledby="setup-title">
+		<span class="brand-mark auth-brand" aria-hidden="true"><span class="brand-eye"></span></span>
+		<span class="eyebrow">ONE-TIME SETUP</span>
+		<h1 id="setup-title">Make this your Vale.</h1>
+		<p>Create the owner account from the desktop that already has your preferred feeds. Its current setup becomes the synchronized server profile.</p>
+
+		<div class="profile-import-preview">
+			<div><strong>This browser currently has</strong><small>{{ subscription_count }} followed {% if subscription_count == 1 %}community{% else %}communities{% endif %}</small></div>
+			{% if feed_groups.is_empty() %}
+			<p>No named feeds yet; the current combined feed will be imported.</p>
+			{% else %}
+			<ul>
+			{% for feed in feed_groups %}<li><span>{{ feed.name }}</span><small>{{ feed.communities.len() }} communities</small></li>{% endfor %}
+			</ul>
+			{% endif %}
+		</div>
+
+		{% if !error.is_empty() %}<div class="auth-error" role="alert">{{ error }}</div>{% endif %}
+		<form action="/setup" method="POST" class="auth-form">
+			<label for="setup-display-name">Display name</label>
+			<input id="setup-display-name" name="display_name" type="text" autocomplete="name" maxlength="64" placeholder="Your name">
+			<label for="setup-username">Username</label>
+			<input id="setup-username" name="username" type="text" autocomplete="username" autocapitalize="none" maxlength="32" required>
+			<label for="setup-password">Password</label>
+			<input id="setup-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+			<small>Use at least 12 characters. Vale stores an Argon2id hash, never the password.</small>
+			<label for="setup-password-confirm">Confirm password</label>
+			<input id="setup-password-confirm" name="password_confirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+			<label class="auth-check" for="import-current">
+				<input id="import-current" name="import_current" type="checkbox" value="on" checked>
+				<span><strong>Use this browser’s current setup</strong><small>Imports feeds, subscriptions, filters, and preferences. The active feed remains local to each device.</small></span>
+			</label>
+			<button class="primary-button" type="submit">Create owner profile</button>
+		</form>
+		<small class="auth-boundary">Setup closes permanently after the first account is created.</small>
+	</section>
+</main>
+{% endblock %}
+
+{% block footer %}{% endblock %}

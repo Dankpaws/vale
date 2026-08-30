@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Combined discussion · Vale{% endblock %}
+
+{% block content %}
+<div id="column_one" class="combined-page">
+	<header class="page-hero combined-hero">
+		<span class="eyebrow">EXACT-SOURCE GROUP</span>
+		<h1>Combined discussion</h1>
+		<p>{{ discussions.len() }} Reddit submissions share the same canonical URL or crosspost lineage. Vale has not inferred that merely similar titles or separate coverage are the same story.</p>
+		{% if !source_url.is_empty() %}<a class="quiet-button" href="{{ source_url }}" rel="nofollow">Open shared source ↗</a>{% endif %}
+	</header>
+
+	<section class="combined-discussions" aria-labelledby="combined-discussions-title">
+		<header><h2 id="combined-discussions-title">Included discussions</h2><p>Each original thread remains available independently.</p></header>
+		<div>
+			{% for discussion in discussions %}
+			<article>
+				<span class="community-avatar" aria-hidden="true">{{ discussion.community.get(0..1).unwrap_or_default().to_uppercase() }}</span>
+				<div><a href="{{ discussion.permalink }}">r/{{ discussion.community }} · {{ discussion.title }}</a><small>{{ discussion.score }} points · {{ discussion.comments }} comments</small></div>
+				<a class="quiet-button" href="{{ discussion.permalink }}#comments">Open</a>
+			</article>
+			{% endfor %}
+		</div>
+	</section>
+
+	<section class="combined-comment-section" aria-labelledby="combined-comments-title">
+		<header class="combined-comments-header">
+			<div><span class="eyebrow">TOP-LEVEL COMMENTS</span><h2 id="combined-comments-title">{{ comments.len() }} comments across {{ discussions.len() }} threads</h2></div>
+			<p>Top-level comments are ordered by displayed score from highest to lowest. Replies stay attached to their parent so conversation context is not destroyed.</p>
+		</header>
+
+		{% if prefs.comment_filter_keywords != "" %}
+		<div class="comment-filter-bar" data-comment-filter-bar {% if filtered_comment_count == 0 %}hidden{% endif %}>
+			<div>
+				<span class="comment-filter-icon" aria-hidden="true">✦</span>
+				<span><strong><span data-comment-filter-count>{{ filtered_comment_count }}</span> filtered</strong><small>Keyword-matched comments stay tucked away.</small></span>
+			</div>
+			<div class="comment-filter-actions">
+				<a href="/settings#comment_filter_keywords">Edit filters</a>
+				<button type="button" data-comment-filter-toggle aria-pressed="false"><span data-comment-filter-label>Show filtered comments</span></button>
+			</div>
+		</div>
+		{% endif %}
+
+		{% if comments.is_empty() %}
+		<section class="empty-feed-state"><span aria-hidden="true">◌</span><strong>No comments available.</strong><p>Reddit did not return a top-level discussion for these submissions.</p></section>
+		{% else %}
+		<div class="combined-comment-list thread-projection" data-thread-projection>
+			<p class="sr-only" data-thread-status role="status" aria-live="polite"></p>
+			{% for entry in comments %}
+			<section class="combined-comment thread-group" data-thread-group data-thread-group-id="{{ entry.group.id }}" data-thread-post-id="t3_{{ entry.post_id }}" data-thread-sort="top">
+				<header>
+					<a href="/r/{{ entry.community }}">r/{{ entry.community }}</a>
+					<span aria-hidden="true">·</span>
+					<a href="{{ entry.post_permalink }}#{{ entry.group.root.id }}">{{ entry.post_title }}</a>
+					<span class="combined-raw-score">{{ entry.raw_score }} {% if entry.raw_score == 1 %}point{% else %}points{% endif %} at load</span>
+				</header>
+				{{ entry.group.root.render().unwrap_or_default()|safe }}
+				{% if !entry.group.descendants.is_empty() %}
+				<div
+					id="{{ entry.group.root.reply_region_id }}"
+					class="thread-descendants"
+					data-thread-descendants
+					data-thread-root-id="{{ entry.group.id }}"
+					{% if entry.group.root.prefs.collapse_child_comments == "on" %}hidden{% endif %}
+				>
+					{% for node in entry.group.descendants -%}{{ node.render().unwrap_or_default()|safe }}{%- endfor %}
+				</div>
+				{% endif %}
+			</section>
+			{% endfor %}
+		</div>
+		{% endif %}
+	</section>
+</div>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% import "utils.html" as utils %}<div data-vale-posts-fragment="1" data-vale-fragment-version="posts-v1" data-vale-render-kind="{{ render_kind }}" data-listing-status="{{ listing_status }}" data-visible-count="{{ visible_count }}">
+	<div data-vale-posts-collection>
+	{% for post in posts %}{% if render_kind == "search" %}<div class="search-result-entry" data-vale-search-result="1"><p class="search-result-context">Post · {{ crate::search::membership_label(prefs, active_feed, post.community) }}</p>{% call utils::post_in_list(post) %}</div>{% else %}{% call utils::post_in_list(post) %}{% endif %}{% endfor %}
+	</div>
+	<footer class="listing-pagination" aria-label="Listing pages" data-listing-pagination>
+		{% if !previous_url.is_empty() %}<a href="{{ previous_url }}" rel="prev" accesskey="P">Previous page</a>{% endif %}
+		{% if !next_url.is_empty() %}<a href="{{ next_url }}" rel="next" accesskey="N">Next page</a>{% endif %}
+	</footer>
+	<p data-listing-status-message{% if listing_status == "complete" %} hidden{% endif %}>{% if listing_status == "retry" %}Vale could not finish refreshing this listing. Retry to check for more posts.{% else if listing_status == "end" %}You’ve reached the end of this listing.{% endif %}</p>
+</div>

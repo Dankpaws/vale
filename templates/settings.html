@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}Settings · Vale{% endblock %}
+
+{% block subscriptions %}
+{% call utils::sub_list("") %}
+{% endblock %}
+
+{% block search %}
+{% call utils::search("".to_owned(), "") %}
+{% endblock %}
+
+{% block content %}
+<div id="settings">
+	<header class="page-hero"><span class="eyebrow">{% if profile_mode == "browser" %}LOCAL PREFERENCES{% else %}PROFILE SETTINGS{% endif %}</span><h1>Settings</h1><p>{% if profile_mode == "browser" %}Fine-tune your quiet corner. Preferences stay in this browser.{% else %}Feeds, filters, and preferences follow this profile across signed-in devices.{% endif %}</p></header>
+	{% match account %}
+	{% when Some with (account) %}
+	<section class="account-panel" aria-labelledby="account-panel-title">
+		<div class="account-panel-header">
+			<div class="account-identity">
+				<span class="account-avatar" aria-hidden="true">{{ account.display_name.get(0..1).unwrap_or_default().to_uppercase() }}</span>
+				<div><strong id="account-panel-title">{{ account.display_name }}</strong><small>@{{ account.username }}{% if account.is_admin %} · administrator{% endif %}</small></div>
+			</div>
+			<div class="account-actions">
+				<a class="quiet-button" href="/history">Reading history</a>
+				<form action="/logout" method="POST"><button class="quiet-button">Sign out</button></form>
+			</div>
+		</div>
+		{% if !account_status.is_empty() %}<div class="account-status" role="status">{{ account_status }}</div>{% endif %}
+		<details class="account-details">
+			<summary>Account and security</summary>
+			<div class="account-details-content">
+				<form class="account-form" action="/account/password" method="POST">
+					<h3>Change your password</h3><p>This revokes every existing session and immediately signs this device back in.</p>
+					<label>Current password<input name="current_password" type="password" autocomplete="current-password" maxlength="128" required></label>
+					<label>New password<input name="new_password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></label>
+					<label>Confirm new password<input name="new_password_confirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></label>
+					<button class="quiet-button" type="submit">Change password</button>
+				</form>
+				<form action="/account/logout-all" method="POST"><button class="danger-button quiet-button" onclick="return confirm('Sign out every device using this account?')">Sign out all devices</button></form>
+
+				{% if account.is_admin %}
+				<form class="account-form" action="/account/users" method="POST">
+					<h3>Create another account</h3><p>There is no public registration. Every account receives independent feeds, filters, settings, and history.</p>
+					<label>Display name<input name="display_name" maxlength="64" autocomplete="off"></label>
+					<label>Username<input name="username" maxlength="32" autocapitalize="none" autocomplete="off" required></label>
+					<label>Initial password<input name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>
+					<label>Confirm password<input name="password_confirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>
+					<label class="auth-check"><input name="clone_profile" type="checkbox" value="on"><span><strong>Start with my current feeds</strong><small>Copies the feed definitions and preferences once; future changes remain independent.</small></span></label>
+					<label class="auth-check"><input name="is_admin" type="checkbox" value="on"><span><strong>Administrator</strong><small>Allows account creation, disabling, and password resets.</small></span></label>
+					<button class="primary-button" type="submit">Create account</button>
+				</form>
+
+				<div class="account-user-list" aria-label="Vale accounts">
+				{% for user in accounts %}
+				<article class="account-user">
+					<div class="account-user-main">
+						<div><strong>{{ user.display_name }}</strong><small>@{{ user.username }}{% if user.is_current %} · this account{% endif %}</small></div>
+						<div class="account-user-badges">{% if user.is_admin %}<span class="account-badge">Admin</span>{% endif %}{% if user.is_disabled %}<span class="account-badge disabled">Disabled</span>{% endif %}</div>
+					</div>
+					{% if !user.is_current %}
+					<div class="account-user-controls">
+						<form class="reset-password-form" action="/account/users/{{ user.id }}/password" method="POST">
+							<input name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" placeholder="New temporary password" aria-label="New password for {{ user.username }}" required>
+							<input name="password_confirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" placeholder="Confirm password" aria-label="Confirm new password for {{ user.username }}" required>
+							<button class="quiet-button" type="submit">Reset</button>
+						</form>
+						<form action="/account/users/{{ user.id }}/toggle" method="POST"><button class="quiet-button{% if !user.is_disabled %} danger-button{% endif %}" type="submit">{% if user.is_disabled %}Enable{% else %}Disable{% endif %}</button></form>
+					</div>
+					{% endif %}
+				</article>
+				{% endfor %}
+				</div>
+				{% endif %}
+			</div>
+		</details>
+	</section>
+	{% when None %}
+	{% endmatch %}
+	{% match archive_quota %}
+	{% when Some with (quota) %}
+	<form class="prefs archive-storage-form" action="/settings/archive-storage" method="POST">
+		<fieldset id="archive-storage" class="archive-storage-fieldset">
+			<legend>Archive storage</legend>
+			<input type="hidden" name="archive_budget_revision" value="{{ archive_setting.revision }}">
+			{% if !archive_notice.is_empty() %}<p class="archive-storage-notice" role="status">{{ archive_notice }}</p>{% endif %}
+			{% if !archive_error.is_empty() %}<div class="archive-storage-error" id="archive-storage-error" role="alert" tabindex="-1">{{ archive_error }}</div>{% endif %}
+			<div class="archive-budget-options"{% if !archive_error.is_empty() %} aria-describedby="archive-storage-error"{% endif %}>
+				<label class="archive-budget-option">
+					<input type="radio" name="archive_budget_mode" value="instance"{% if archive_budget_mode == "instance" %} checked{% endif %}>
+					<span><strong>Use instance maximum (currently {{ quota.instance_limit_size }}).</strong><small>Share the full machine-wide archive allowance with other Vale profiles.</small></span>
+				</label>
+				<label class="archive-budget-option">
+					<input type="radio" name="archive_budget_mode" value="custom"{% if archive_budget_mode == "custom" %} checked{% endif %}{% if !quota.custom_budget_available %} disabled{% endif %}>
+					<span><strong>Set a profile budget.</strong><small>{% if quota.custom_budget_available %}Limit new captures for this profile without deleting existing saves.{% else %}Unavailable because this instance maximum is below 256 MiB.{% endif %}</small></span>
+				</label>
+				<label class="archive-budget-input" for="archive_budget_mib">
+					<span>Budget (MiB)</span>
+					<input id="archive_budget_mib" name="archive_budget_mib" type="number" inputmode="numeric" step="256" min="256" max="{{ quota.maximum_custom_mib }}" value="{{ archive_budget_value }}"{% if !quota.custom_budget_available %} disabled{% endif %}{% if !archive_error.is_empty() %} aria-invalid="true" aria-describedby="archive-storage-error" autofocus{% endif %}>
+				</label>
+			</div>
+			<dl class="archive-metrics" aria-label="Your archive storage">
+				<div><dt>Your archive use</dt><dd>{{ quota.used_size }}</dd></div>
+				<div><dt>Temporarily reserved</dt><dd>{{ quota.reserved_size }}</dd></div>
+				<div><dt>Current effective limit</dt><dd>{{ quota.effective_limit_size }}</dd></div>
+				<div><dt>Configured instance maximum</dt><dd>{{ quota.instance_limit_size }}</dd></div>
+			</dl>
+			{% if quota.is_over_budget %}
+			<div class="archive-capacity-warning" role="status"><strong>This profile is {{ quota.over_by_size }} over its current effective limit.</strong><p>Existing saved posts remain readable. New captures and retries are paused. <a href="/saved">Delete saved archives</a> or raise this budget. If the instance maximum still leaves this profile over, raising the profile setting cannot fix it.</p></div>
+			{% else if quota.instance_exhausted %}
+			<div class="archive-capacity-warning" role="status"><strong>The shared instance allowance is currently exhausted.</strong><p>Existing saved posts remain readable. New captures and retries resume after archive storage is removed.</p></div>
+			{% endif %}
+			<button class="primary-button" type="submit">Save archive budget</button>
+		</fieldset>
+	</form>
+	{% when None %}
+	{% endmatch %}
+	<form id="preferences-form" action="/settings" method="POST">
+		<input type="hidden" name="feed_groups" value="{{ prefs.feed_groups }}">
+		<input type="hidden" name="active_feed" value="{{ prefs.active_feed }}">
+		<div class="prefs" id="preferences">
+			{% if settings_saved %}<p class="settings-saved-status" role="status">Settings saved.</p>{% endif %}
+			<fieldset>
+				<legend>Appearance</legend>
+				<div class="prefs-group">
+					<label class="preference-copy" for="theme"><span>Theme</span><small>System follows this device. Light and Dark remain fixed.</small></label>
+					<select name="theme" id="theme">
+						<option value="system"{% if prefs.theme == "system" %} selected{% endif %}>System</option>
+						<option value="light"{% if prefs.theme == "light" %} selected{% endif %}>Light</option>
+						<option value="dark"{% if prefs.theme == "dark" %} selected{% endif %}>Dark</option>
+					</select>
+				</div>
+			</fieldset>
+			<fieldset>
+				<legend>Reading</legend>
+				<div class="prefs-group">
+					<label for="post_sort">Default post sort</label>
+					<select name="post_sort" id="post_sort">
+						{% call utils::options(prefs.post_sort, ["hot", "new", "top", "rising", "controversial"], "hot")
+						%}
+					</select>
+				</div>
+				<div class="prefs-group">
+					<label for="comment_sort">Default comment sort</label>
+					<select name="comment_sort" id="comment_sort">
+						{% call utils::options(prefs.comment_sort, ["confidence", "top", "new", "controversial", "old"],
+						"confidence") %}
+					</select>
+				</div>
+				<div class="prefs-group">
+					<label class="preference-copy" for="collapse_child_comments">
+						<span>Collapse child comment trees</span>
+						<small>Keep each parent visible and reveal all of its replies when you choose.</small>
+					</label>
+					<input type="hidden" value="off" name="collapse_child_comments">
+					<input type="checkbox" name="collapse_child_comments" id="collapse_child_comments" {% if
+						prefs.collapse_child_comments=="on" %}checked{% endif %}>
+				</div>
+				<div class="prefs-group">
+					<label class="preference-copy" for="keyboard_navigation"><span>Keyboard navigation</span><small>Move through feed cards without reaching for the pointer.</small></label>
+					<input type="hidden" value="off" name="keyboard_navigation">
+					<input type="checkbox" name="keyboard_navigation" id="keyboard_navigation" {% if prefs.keyboard_navigation == "on" %}checked{% endif %}>
+				</div>
+				<div class="keyboard-shortcuts" data-shortcut-settings>
+					<div class="keyboard-shortcuts-heading"><div><strong>Feed shortcuts</strong><small>Select a field, then press the key you want.</small></div><button type="button" class="quiet-button" data-shortcut-reset>Restore defaults</button></div>
+					<div class="keyboard-shortcut-grid">
+						<label><span>Next post</span><input class="shortcut-capture" name="key_next_post" value="{{ prefs.key_next_post }}" readonly data-default-key="j" aria-label="Shortcut for next post"></label>
+						<label><span>Previous post</span><input class="shortcut-capture" name="key_previous_post" value="{{ prefs.key_previous_post }}" readonly data-default-key="k" aria-label="Shortcut for previous post"></label>
+						<label><span>Open post</span><input class="shortcut-capture" name="key_open_post" value="{{ prefs.key_open_post }}" readonly data-default-key="Enter" aria-label="Shortcut to open post"></label>
+						<label><span>Expand / collapse</span><input class="shortcut-capture" name="key_toggle_preview" value="{{ prefs.key_toggle_preview }}" readonly data-default-key="e" aria-label="Shortcut to expand or collapse a post"></label>
+						<label><span>Hide post</span><input class="shortcut-capture" name="key_hide_post" value="{{ prefs.key_hide_post }}" readonly data-default-key="h" aria-label="Shortcut to hide a post"></label>
+					</div>
+					<p class="shortcut-help" data-shortcut-status aria-live="polite">Shortcuts pause in links, forms, and media controls.</p>
+				</div>
+				<div class="settings-action-card"><div><strong>Hidden posts · {{ hidden_post_count }}</strong><small>{% if profile_mode == "browser" %}Hidden posts stay in this browser.{% else %}Hidden posts follow this profile across signed-in devices.{% endif %}</small></div><button class="quiet-button danger-button" type="submit" formaction="/hidden/clear" formmethod="POST" {% if hidden_post_count == 0 %}disabled{% endif %} onclick="return confirm('Return every hidden post to your feeds?')">Clear hidden posts</button></div>
+			</fieldset>
+
+			<fieldset>
+				<legend>Media</legend>
+				<div class="prefs-group"><label for="video_quality">Video quality</label><select name="video_quality" id="video_quality">{% call utils::options(prefs.video_quality, ["best", "medium", "worst"], "best") %}</select></div>
+				<div class="prefs-group"><label for="autoplay_videos">Autoplay videos</label><input type="hidden" value="off" name="autoplay_videos"><input type="checkbox" name="autoplay_videos" id="autoplay_videos" {% if prefs.autoplay_videos=="on" %}checked{% endif %}></div>
+				<div class="prefs-group"><label class="preference-copy" for="use_hls"><span>Use HLS for videos</span><small>Enables local audio-aware playback through the bundled player.</small></label><input type="hidden" value="off" name="use_hls"><input type="checkbox" name="use_hls" id="use_hls" {% if prefs.use_hls=="on" %}checked{% endif %}></div>
+				<div class="prefs-group"><label for="hide_hls_notification">Hide HLS help notices</label><input type="hidden" value="off" name="hide_hls_notification"><input type="checkbox" name="hide_hls_notification" id="hide_hls_notification" {% if prefs.hide_hls_notification=="on" %}checked{% endif %}></div>
+			</fieldset>
+
+			<fieldset>
+				<legend>Content and privacy</legend>
+				<div class="prefs-group">
+					<label for="blur_spoiler">Blur spoiler previews</label>
+					<input type="hidden" value="off" name="blur_spoiler">
+					<input type="checkbox" name="blur_spoiler" id="blur_spoiler" {% if prefs.blur_spoiler=="on"
+						%}checked{% endif %}>
+				</div>
+				{% if !crate::utils::sfw_only() %}
+				<div class="prefs-group">
+					<label for="show_nsfw">Show NSFW posts</label>
+					<input type="hidden" value="off" name="show_nsfw">
+					<input type="checkbox" name="show_nsfw" id="show_nsfw" {% if prefs.show_nsfw=="on" %}checked{% endif
+						%}>
+				</div>
+				<div class="prefs-group">
+					<label for="blur_nsfw">Blur NSFW previews</label>
+					<input type="hidden" value="off" name="blur_nsfw">
+					<input type="checkbox" name="blur_nsfw" id="blur_nsfw" {% if prefs.blur_nsfw=="on" %}checked{% endif
+						%}>
+				</div>
+				{% endif %}
+				<div class="prefs-group">
+					<label for="hide_awards">Hide awards</label>
+					<input type="hidden" value="off" name="hide_awards">
+					<input type="checkbox" name="hide_awards" id="hide_awards" {% if prefs.hide_awards=="on" %}checked{%
+						endif %}>
+				</div>
+				<div class="prefs-group">
+					<label for="hide_score">Hide score</label>
+					<input type="hidden" value="off" name="hide_score">
+					<input type="checkbox" name="hide_score" id="hide_score" {% if prefs.hide_score=="on" %}checked{%
+						endif %}>
+				</div>
+				<div class="prefs-group">
+						<label for="disable_visit_reddit_confirmation">Do not confirm before visiting content on
+							Reddit</label>
+						<input type="hidden" value="off" name="disable_visit_reddit_confirmation">
+						<input type="checkbox" name="disable_visit_reddit_confirmation" id="disable_visit_reddit_confirmation" {% if
+							prefs.disable_visit_reddit_confirmation=="on" %}checked{% endif %}>
+				</div>
+				<div class="prefs-group prefs-group-stack">
+					<label class="preference-copy" for="comment_filter_keywords">
+						<span>Comment keyword filters</span>
+						<small>One keyword or phrase per line. Matching is case-insensitive and filtered comments can still be revealed inside a thread.</small>
+					</label>
+					<textarea name="comment_filter_keywords" id="comment_filter_keywords" rows="5" placeholder="spoiler phrase&#10;topic to hide">{{ prefs.comment_filter_keywords }}</textarea>
+				</div>
+				<div class="settings-action-card"><div><strong>Named feeds</strong><small>Keep topics separate and choose each feed directly.</small></div><a class="primary-button" href="/feeds">Manage feeds</a></div>
+			</fieldset>
+			<input id="save" type="submit" value="Save settings">
+		</div>
+	</form>
+	{% if prefs.subscriptions.len() > 0 %}
+	<div class="prefs" id="settings_subs">
+		<legend>Subscribed Feeds</legend>
+		{% for sub in prefs.subscriptions %}
+		<div>
+			{% let feed -%}
+			{% if sub.starts_with("u_") -%}{% let feed = format!("u/{}", &sub[2..]) -%}{% else -%}{% let feed =
+			format!("r/{}", sub) -%}{% endif -%}
+			<a href="/{{ feed }}">{{ feed }}</a>
+			<form action="/r/{{ sub }}/unsubscribe/?redirect=settings" method="POST">
+				<button class="unsubscribe">Unsubscribe</button>
+			</form>
+		</div>
+		{% endfor %}
+	</div>
+	{% endif %}
+	{% if !prefs.filters.is_empty() %}
+	<div class="prefs" id="settings_filters">
+		<legend>Filtered Feeds</legend>
+		{% for sub in prefs.filters %}
+		<div>
+			{% let feed -%}
+			{% if sub.starts_with("u_") -%}{% let feed = format!("u/{}", &sub[2..]) -%}{% else -%}{% let feed =
+			format!("r/{}", sub) -%}{% endif -%}
+			<a href="/{{ feed }}">{{ feed }}</a>
+			<form action="/r/{{ sub }}/unfilter/?redirect=settings" method="POST">
+				<button class="unfilter">Unfilter</button>
+			</form>
+		</div>
+		{% endfor %}
+	</div>
+	{% endif %}
+
+	<section id="settings_note" aria-labelledby="local-preferences-note">
+		<p id="local-preferences-note">{% if profile_mode == "browser" %}<b>Local by design:</b> settings, feeds, and subscriptions are saved in browser cookies. Clearing your cookies will reset them.{% else %}<b>Profile-backed:</b> settings, feeds, subscriptions, filters, and history are stored on this private Vale instance. The active feed and temporary interface state remain local to each device.{% endif %}</p>
+		<details class="settings-advanced">
+			<summary>
+				<span><strong>Backup and restore</strong><small>Export your current preferences or restore a saved copy.</small></span>
+			</summary>
+			<div class="settings-backup-content">
+				{% if profile_mode == "browser" %}{% match prefs.to_urlencoded() %}
+				{% when Ok with (encoded_prefs) %}
+				<p><a href="/settings/restore/?{{ encoded_prefs }}">Open a restore link for these settings</a></p>
+				{% when Err with (err) %}
+				<p>There was an error creating your restore link: {{ err }}</p>
+				{% endmatch %}{% endif %}
+
+				<script src="/copy.js"></script>
+				<div class="settings-backup-field">
+					<label for="bincode_str">Encoded backup</label>
+					<small id="encoded-backup-description">Save this value somewhere private after saving your settings.</small>
+					<div class="settings-inline-control">
+						<input type="text" id="bincode_str" name="bincode_str"
+							value="{% match prefs.to_bincode_str() %}{% when Ok with (bincode_str) %}{{ bincode_str }}{% when Err with (err) %}Error: {{ err }}{% endmatch %}"
+							aria-describedby="encoded-backup-description" readonly>
+						<button id="copy" class="copy" type="button">Copy backup</button>
+					</div>
+				</div>
+
+				<form class="settings-backup-field" action="/settings/encoded-restore/" method="POST">
+					<label for="encoded_prefs">Restore an encoded backup</label>
+					<small id="restore-backup-description">Importing replaces the preferences stored in this {% if profile_mode == "browser" %}browser{% else %}profile{% endif %}.</small>
+					<div class="settings-inline-control">
+						<input type="text" id="encoded_prefs" name="encoded_prefs" value="" aria-describedby="restore-backup-description" placeholder="Paste encoded settings">
+						<button class="import" type="submit">Restore</button>
+					</div>
+				</form>
+			</div>
+		</details>
+	</section>
+</div>
+
+<div class="settings-save-bar" data-settings-save-bar hidden>
+	<div class="settings-save-bar-inner">
+		<span>Unsaved settings</span>
+		<button type="submit" form="preferences-form">Save settings</button>
+	</div>
+</div>
+
+{% endblock %}

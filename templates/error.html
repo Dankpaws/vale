@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Connection interrupted · Vale{% endblock %}
+{% block content %}
+<section class="state-card" role="status">
+	<div class="state-icon" aria-hidden="true">!</div>
+	<div>
+		<span class="eyebrow">REDDIT CONNECTION</span>
+		<h1>Reddit closed the blinds.</h1>
+		<p>Vale could not read this page from Reddit just now. Your communities and preferences are safe; a retry is usually enough.</p>
+		<details><summary>Technical detail</summary><code>{{ msg }}</code></details>
+		<div class="state-actions"><a class="primary-button" href="{{ url }}">Try again</a><a class="quiet-button" href="/">Back to My feed</a></div>
+	</div>
+</section>
+{% endblock %}

@@ -1,0 +1,42 @@
+[Unit]
+Description=Vale personal Reddit reader
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=vale
+Group=vale
+WorkingDirectory=/var/lib/vale
+EnvironmentFile=-/etc/vale/vale.env
+ExecStart=/usr/local/lib/vale/vale
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=120s
+UMask=0077
+
+# The generated default binds to loopback.  Change REDLIB_ADDRESS only when a
+# separately reviewed private reverse proxy/firewall is in place.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/vale /var/cache/vale
+ReadOnlyPaths=/usr/local/lib/vale
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

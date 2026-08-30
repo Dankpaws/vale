@@ -1,0 +1,94 @@
+name: Vale container validation
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - name: Build the fork without publishing it
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          VALE_BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          safe_platform="$(printf '%s' "$PLATFORM" | tr '/' '-')"
+          docker buildx build \
+            --platform "$PLATFORM" \
+            --build-arg VALE_BUILD_COMMIT="$VALE_BUILD_COMMIT" \
+            --target runtime \
+            --output "type=oci,dest=$RUNNER_TEMP/vale-$safe_platform.tar" \
+            .
+
+  compose:
+    name: Compose smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - name: Validate and run the local Compose contract
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+          export VALE_PORT=18080
+          compose() {
+            docker compose --project-name vale-ci --file compose.yaml "$@"
+          }
+          cleanup() {
+            compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          compose config --quiet
+          compose build
+          compose up --detach
+          healthy=0
+          for _ in $(seq 1 60); do
+            if compose exec -T vale curl --fail --silent \
+                http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
+              healthy=1
+              break
+            fi
+            sleep 1
+          done
+          test "$healthy" -eq 1
+          test "$(compose ps --status running --services | grep -Fx vale)"
+
+  powershell:
+    name: Parse Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Validate install.ps1 syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD "install.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }

@@ -1,0 +1,26 @@
+/target
+.env
+.env.*
+!.env.example
+redlib.toml
+libreddit.toml
+*.log
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.db
+*.pem
+*.key
+*.p12
+*.pfx
+.DS_Store
+._*
+vale-profiles/
+vale-archives/
+vale-cache/
+/archives/
+/cache/
+/state/
+
+# Idea Files
+.idea/

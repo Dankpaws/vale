@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+	<title id="title">Vale</title>
+	<desc id="desc">Layered teal and midnight ridgelines forming a quiet valley.</desc>
+	<clipPath id="frame"><rect x="42" y="42" width="428" height="428" rx="126"/></clipPath>
+	<rect x="42" y="42" width="428" height="428" rx="126" fill="#07131b"/>
+	<g clip-path="url(#frame)">
+		<path d="M-12 238c74-10 115-106 210-112 94-6 120 113 216 112 60-1 102-38 131-62V-12H-12Z" fill="#49cbd0"/>
+		<path d="M-16 261c73-13 119-68 185-64 78 5 117 88 199 91 71 3 122-35 181-77v157H-16Z" fill="#17384a" stroke="#6bdde1" stroke-opacity=".34" stroke-width="3"/>
+		<path d="M-12 306c81-32 129-74 198-65 76 10 112 91 194 100 68 7 118-20 169-61v155H-12Z" fill="#102737" stroke="#53b5c6" stroke-opacity=".3" stroke-width="3"/>
+		<path d="M-14 360c77-45 130-82 205-67 76 16 109 87 190 104 67 14 116-4 168-39v154H-14Z" fill="#0b1c28" stroke="#4a8ba1" stroke-opacity=".28" stroke-width="3"/>
+		<path d="M-12 415c73-50 133-78 205-57 71 21 108 77 188 99 66 18 117 5 168-24v91H-12Z" fill="#07131b" stroke="#345a6e" stroke-opacity=".36" stroke-width="3"/>
+	</g>
+	<rect x="43.5" y="43.5" width="425" height="425" rx="124.5" fill="none" stroke="#d6ffff" stroke-opacity=".18" stroke-width="3"/>
+</svg>

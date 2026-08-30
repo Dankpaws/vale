@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}
+	{% if sub.title != "" %}{{ sub.title }}
+	{% else if sub.name != "" %}{{ sub.name }}
+	{% else %}{{ active_feed_name }} · Vale{% endif %}
+{% endblock %}
+
+{% block search %}
+	{% call utils::search(["/r/", sub.name.as_str()].concat(), "") %}
+{% endblock %}
+
+{% block subscriptions %}
+	{% call utils::sub_list(sub.name.as_str()) %}
+{% endblock %}
+
+{% block body %}
+	<main class="feed-page{% if sub.name.is_empty() %} is-home-feed{% if !feed_groups.is_empty() %} has-feed-switcher{% endif %}{% else if sub.name != "all" && sub.name != "popular" && !sub.name.contains("+") %} community-page{% endif %}">
+		<section class="feed-hero">
+			<div>
+				{% if !sub.name.is_empty() %}<span class="eyebrow">COMMUNITY</span>{% endif %}
+				<h1>{% if sub.name.is_empty() %}{{ active_feed_name }}{% else %}r/{{ sub.name }}{% endif %}</h1>
+				{% if sub.name.is_empty() %}
+				<p>{{ active_communities.len() }} communities</p>
+				{% else if sub.description != "" %}
+				<p>{{ sub.description }}</p>
+				{% endif %}
+			</div>
+			{% if !sub.name.is_empty() && !sub.name.contains("+") && sub.name != "popular" && sub.name != "all" %}
+			<div class="hero-action">
+				{% if prefs.subscriptions.contains(sub.name) %}
+				<form action="/r/{{ sub.name }}/unsubscribe?redirect={{ redirect_url }}" method="POST"><button class="quiet-button">Following</button></form>
+				{% else %}
+				<form action="/r/{{ sub.name }}/subscribe?redirect={{ redirect_url }}" method="POST"><button class="primary-button">Follow</button></form>
+				{% endif %}
+			</div>
+			{% endif %}
+			{% if sub.name.is_empty() %}
+			{% if !feed_groups.is_empty() %}
+			<nav class="feed-switcher feed-switcher-wide" aria-label="Feed selection">
+				<div class="feed-switcher-tabs">
+				{% for feed in feed_groups %}
+					<a href="/f/{{ feed.slug }}/{{ sort.0 }}" class="feed-switcher-tab{% if feed.slug == active_feed %} is-active{% endif %}" {% if feed.slug == active_feed %}aria-current="page"{% endif %}>
+							{% if feed.slug == active_feed %}<span class="feed-current-marker" aria-hidden="true">✓</span>{% endif %}<span>{{ feed.name }}</span><small>{{ feed.communities.len() }}</small>
+					</a>
+				{% endfor %}
+				</div>
+			</nav>
+			{% endif %}
+			{% endif %}
+		</section>
+		{% if sub.name.is_empty() %}
+		<div class="mobile-feed-context" hidden aria-hidden="true">
+			<span><small>Current feed</small><strong>{{ active_feed_name }}</strong></span>
+		</div>
+		{% endif %}
+		{% if !is_filtered %}
+		<div id="column_one">
+			<form id="sort">
+				<div id="sort_options">
+					{% if sub.name.is_empty() %}
+						{% call utils::sort(["/f/", active_feed.as_str()].concat(), ["hot", "new", "top", "rising", "controversial"], sort.0) %}
+					{% else %}
+						{% call utils::sort(["/r/", sub.name.as_str()].concat(), ["hot", "new", "top", "rising", "controversial"], sort.0) %}
+					{% endif %}
+					<select class="feed-sort-select" data-feed-sort data-sort-root="{% if sub.name.is_empty() %}/f/{{ active_feed }}{% else %}/r/{{ sub.name }}{% endif %}" aria-label="Sort posts">
+						{% call utils::options(sort.0, ["hot", "new", "top", "rising", "controversial"], "hot") %}
+					</select>
+				</div>
+				{% if sort.0 == "top" || sort.0 == "controversial" %}<label class="sr-only" for="timeframe">Timeframe</label><select id="timeframe" name="t" title="Timeframe">
+					{% call utils::options(sort.1, ["hour", "day", "week", "month", "year", "all"], "day") %}
+				</select>
+				<button id="sort_submit" class="submit" aria-label="Apply timeframe">
+					<svg width="15" viewBox="0 0 110 100" fill="none" stroke-width="10" stroke-linecap="round">
+						<path d="M20 50 H100" />
+						<path d="M75 15 L100 50 L75 85" />
+						&rarr;
+					</svg>
+				</button>
+				{% endif %}
+			</form>
+
+			{% if sub.name.contains("+") %}
+				<form action="/r/{{ sub.name }}/subscribe?redirect={{ redirect_url }}" method="POST">
+					<button id="multisub" class="subscribe" title="Subscribe to each sub in this multireddit">Subscribe to Multireddit</button>
+				</form>
+			{% endif %}
+
+			{% if all_posts_hidden_nsfw %}
+			<center>All posts are hidden because they are NSFW. Enable "Show NSFW posts" in settings to view.</center>
+			{% endif %}
+
+			{% if no_posts %}
+			{% if sub.name.is_empty() && !feed_groups.is_empty() %}
+			<div class="empty-feed-state"><span aria-hidden="true">✦</span><strong>This feed is ready for a community.</strong><p>Add one from My feeds, then it will stay separate from your other topics.</p><a class="primary-button" href="/feeds">Add a community</a></div>
+			{% else %}
+			<center>No posts were found.</center>
+			{% endif %}
+			{% endif %}
+
+			{% if all_posts_filtered %}
+				 <center>(All content on this page has been filtered)</center>
+			{% else %}
+			<div id="posts" data-vale-listing="posts-v1" data-vale-render-kind="direct" data-listing-status="{{ listing_status }}" data-visible-count="{{ visible_count }}">
+			{% for post in posts %}
+			{% if !(post.flags.nsfw && prefs.show_nsfw != "on") %}
+			{% call utils::post_in_list(post) %}
+			{% endif %}
+			{% endfor %}
+			</div>
+			{% endif %}
+
+			<footer class="listing-pagination" aria-label="Listing pages" data-listing-pagination>
+				{% if !previous_url.is_empty() %}
+				<a href="{{ previous_url }}" rel="prev" accesskey="P">Previous page</a>
+				{% endif %}
+
+				{% if !next_url.is_empty() %}
+				<a href="{{ next_url }}" rel="next" accesskey="N">Next page</a>
+				{% endif %}
+			</footer>
+			<p class="listing-status-message" data-listing-status-message{% if listing_status == "complete" %} hidden{% endif %}>{% if listing_status == "retry" %}Vale could not finish refreshing this listing. Retry to check for more posts.{% else if listing_status == "end" %}You’ve reached the end of this listing.{% endif %}</p>
+		</div>
+		{% endif %}
+		{% if is_filtered || (!sub.name.is_empty() && sub.name != "all" && sub.name != "popular" && !sub.name.contains("+")) %}
+		<aside class="community-rail" aria-label="Community information">
+			{% if is_filtered %}
+				<p class="community-filtered-notice">Content from r/{{ sub.name }} has been filtered.</p>
+			{% endif %}
+			{% if !sub.name.is_empty() && sub.name != "all" && sub.name != "popular" && !sub.name.contains("+") %}
+			<section class="community-summary" aria-labelledby="community-summary-heading">
+				<div class="community-summary-identity">
+					<span class="community-icon-frame" aria-hidden="true">
+						{% if !sub.icon.is_empty() %}<img class="community-icon" src="{{ sub.icon }}" alt="" width="52" height="52" loading="lazy" decoding="async" data-community-icon>{% endif %}
+						<span class="community-icon-fallback"{% if !sub.icon.is_empty() %} hidden{% endif %} data-community-icon-fallback>{{ sub.name.get(0..1).unwrap_or_default().to_uppercase() }}</span>
+					</span>
+					<h2 id="community-summary-heading">{% if sub.title.is_empty() %}r/{{ sub.name }}{% else %}{{ sub.title }}{% endif %}</h2>
+				</div>
+				<dl class="community-stats">
+					<div><dt>Members</dt><dd title="{{ sub.members.1 }}">{{ sub.members.0 }}</dd></div>
+					<div><dt>Active</dt><dd title="{{ sub.active.1 }}">{{ sub.active.0 }}</dd></div>
+				</dl>
+				<div class="community-summary-actions">
+					{% if sub.wiki %}<a class="quiet-button" href="/r/{{ sub.name }}/wiki/index">Wiki</a>{% endif %}
+					{% if prefs.filters.contains(sub.name) %}
+					<form action="/r/{{ sub.name }}/unfilter?redirect={{ redirect_url }}" method="POST"><button class="unfilter">Unfilter</button></form>
+					{% else %}
+					<form action="/r/{{ sub.name }}/filter?redirect={{ redirect_url }}" method="POST"><button class="filter">Filter</button></form>
+					{% endif %}
+				</div>
+			</section>
+			<details class="community-about">
+				<summary>About this community</summary>
+				<div class="community-about-content">
+					{{ sub.info|safe }}
+				</div>
+			</details>
+			{% endif %}
+		</aside>
+		{% endif %}
+		{% if sub.name.is_empty() %}
+		<aside class="feed-context" aria-label="Your communities">
+			{% if !feed_groups.is_empty() || !active_communities.is_empty() %}
+			<section class="context-card active-feed-context">
+				<div class="section-heading compact-heading">
+					<div><span class="eyebrow">ACTIVE FEED</span><h2>{{ active_feed_name }}</h2><p>{{ active_communities.len() }} communities</p></div>
+				</div>
+				<nav class="community-list">
+				{% for sub in active_communities %}
+					<a href="/r/{{ sub }}"><span class="community-avatar" aria-hidden="true">{{ sub.get(0..1).unwrap_or_default().to_uppercase() }}</span><span>r/{{ sub }}</span></a>
+				{% endfor %}
+				</nav>
+				<a class="context-link" href="/feeds">Manage this feed</a>
+			</section>
+			{% endif %}
+		</aside>
+		{% endif %}
+	</main>
+{% endblock %}

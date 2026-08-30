@@ -1,0 +1,66 @@
+services:
+  vale:
+    # Build the fork in this checkout.  A separately published image can be
+    # selected by a caller with `docker compose build`/`docker tag` without
+    # baking an owner or registry name into the public contract.
+    # Interactive recovery keeps the same state volume and TTY:
+    # `docker compose run --rm vale admin reset-password --username ACCOUNT`
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VALE_BUILD_COMMIT: "${VALE_BUILD_COMMIT:-dev}"
+    image: vale:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${VALE_PORT:-8080}:8080"
+    user: "10001:10001"
+    read_only: true
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      REDLIB_ADDRESS: "0.0.0.0"
+      PORT: "8080"
+      RUST_LOG: "${RUST_LOG:-warn}"
+      VALE_PROFILE_MODE: "${VALE_PROFILE_MODE:-accounts}"
+      VALE_PROFILE_DATABASE: "${VALE_PROFILE_DATABASE:-/var/lib/vale/profiles.sqlite3}"
+      VALE_ARCHIVE_DIR: "${VALE_ARCHIVE_DIR:-/var/lib/vale/archives}"
+      VALE_MEDIA_CACHE_DIR: "${VALE_MEDIA_CACHE_DIR:-/var/cache/vale}"
+      VALE_ARCHIVE_ITEM_MAX_BYTES: "${VALE_ARCHIVE_ITEM_MAX_BYTES:-1073741824}"
+      VALE_ARCHIVE_TOTAL_MAX_BYTES: "${VALE_ARCHIVE_TOTAL_MAX_BYTES:-2147483648}"
+      VALE_SESSION_DAYS: "${VALE_SESSION_DAYS:-30}"
+      VALE_COOKIE_SECURE: "${VALE_COOKIE_SECURE:-off}"
+      REDLIB_FULL_URL: "${REDLIB_FULL_URL:-}"
+      REDLIB_ROBOTS_DISABLE_INDEXING: "${REDLIB_ROBOTS_DISABLE_INDEXING:-on}"
+      REDLIB_DEFAULT_THEME: "${REDLIB_DEFAULT_THEME:-dark}"
+      REDLIB_DEFAULT_REMOVE_DEFAULT_FEEDS: "${REDLIB_DEFAULT_REMOVE_DEFAULT_FEEDS:-on}"
+      REDLIB_DEFAULT_SUBSCRIPTIONS: "${REDLIB_DEFAULT_SUBSCRIPTIONS:-}"
+      REDLIB_DEFAULT_FILTERS: "${REDLIB_DEFAULT_FILTERS:-}"
+    volumes:
+      - vale-state:/var/lib/vale
+      - vale-cache:/var/cache/vale
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,size=64m"
+    networks:
+      - vale
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  vale-state:
+  vale-cache:
+
+networks:
+  vale:

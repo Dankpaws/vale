@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vale Rust dependency licenses</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 16px/1.5 system-ui, sans-serif; margin: 0 auto; max-width: 72rem; padding: 2rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border-bottom: 1px solid #8886; padding: .4rem; text-align: left; vertical-align: top; }
+    pre { border: 1px solid #8886; max-height: 24rem; overflow: auto; padding: 1rem; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Vale Rust dependency licenses</h1>
+    <p>Generated from Vale's locked Linux dependency graph with cargo-about 0.9.2.</p>
+    <table>
+      <thead><tr><th>Package</th><th>Version</th><th>Selected license</th></tr></thead>
+      <tbody>
+      {{#each crates}}
+        <tr>
+          <td><a href="{{#if package.repository}}{{package.repository}}{{else}}https://crates.io/crates/{{package.name}}{{/if}}">{{package.name}}</a></td>
+          <td>{{package.version}}</td>
+          <td>{{license}}</td>
+        </tr>
+      {{/each}}
+      </tbody>
+    </table>
+    <h2>License texts</h2>
+    {{#each overview}}
+      <section>
+        <h3 id="{{id}}">{{name}}</h3>
+        <pre>{{text}}</pre>
+      </section>
+    {{/each}}
+  </main>
+</body>
+</html>

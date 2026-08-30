@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Reading history · Vale{% endblock %}
+
+{% block content %}
+<div id="column_one" class="simple-page history-page">
+	<header class="page-hero history-hero">
+		<div><span class="eyebrow">YOUR PROFILE</span><h1>Reading history</h1><p>Posts you opened inside Vale, synchronized across your signed-in devices.</p></div>
+		{% if !entries.is_empty() %}
+		<form action="/history/clear" method="POST"><button class="quiet-button danger-button" onclick="return confirm('Clear this profile’s entire reading history?')">Clear history</button></form>
+		{% endif %}
+	</header>
+	{% if entries.is_empty() %}
+	<section class="empty-feed-state"><span aria-hidden="true">◌</span><strong>Nothing read yet.</strong><p>Posts will appear here after you open their local discussion page.</p><a class="primary-button" href="/">Browse your feed</a></section>
+	{% else %}
+	<section class="history-list" aria-label="Recently viewed posts">
+	{% for entry in entries %}
+		<article class="history-item">
+			<div class="history-item-copy">
+				<h2 class="history-heading">
+					<a class="history-title" href="{{ entry.permalink }}">{{ entry.title }}</a>
+				</h2>
+				<p class="history-item-meta"><a href="/r/{{ entry.community }}">r/{{ entry.community }}</a><span>{{ entry.viewed }}{% if entry.view_count > 1 %}<span aria-hidden="true"> · </span>{{ entry.view_count }} views{% endif %}</span></p>
+			</div>
+		</article>
+	{% endfor %}
+	</section>
+	{% endif %}
+</div>
+{% endblock %}

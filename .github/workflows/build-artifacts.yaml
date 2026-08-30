@@ -1,0 +1,294 @@
+name: Vale release artifacts
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quality:
+    name: Tagged-source quality gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Install the pinned toolchain
+        uses: dtolnay/rust-toolchain@f8be11a05b1d4f3fcebe6410cc16743212b999b0 # 1.98.0
+        with:
+          components: clippy, rustfmt
+
+      - name: Require the release tag to match the package version
+        if: github.ref_type == 'tag'
+        run: |
+          set -euo pipefail
+          package_version="$(
+            cargo metadata --locked --no-deps --format-version 1 |
+              jq --raw-output '.packages[] | select(.name == "redlib") | .version'
+          )"
+          test -n "$package_version"
+          if [[ "$GITHUB_REF_NAME" != "v$package_version" ]]; then
+            printf 'Release tag %s does not match package version v%s.\n' \
+              "$GITHUB_REF_NAME" "$package_version" >&2
+            exit 1
+          fi
+
+      - name: Validate, test, and lint the locked source
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --locked --all-targets
+          cargo test --locked
+          node --test tests/js/*.test.mjs
+          cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Validate installers and Compose configuration
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck
+          bash -n install.sh
+          shellcheck install.sh contrib/vale-admin scripts/update_hls_js.sh scripts/update_rust_licenses.sh
+          docker compose --env-file .env.example config --quiet
+
+      - name: Install the pinned license generator
+        run: cargo install cargo-about --version 0.9.2 --locked --features cli
+
+      - name: Install pinned dependency-audit tools
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked
+          cargo install cargo-machete --version 0.9.2 --locked
+
+      - name: Audit vulnerabilities and unused direct dependencies
+        run: |
+          set -euo pipefail
+          cargo audit --ignore RUSTSEC-2025-0141
+          cargo machete
+
+      - name: Verify the dependency license inventory
+        run: |
+          set -euo pipefail
+          scripts/update_rust_licenses.sh
+          git diff --exit-code -- THIRD_PARTY_LICENSES.html
+
+  powershell:
+    name: Parse the tagged Windows installer
+    runs-on: windows-latest
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Validate install.ps1 syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD "install.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
+  container-smoke:
+    name: Tagged Compose health and hardening smoke
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the exact tagged source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Build and exercise the checked-in Compose contract
+        env:
+          VALE_BUILD_COMMIT: ${{ github.sha }}
+          VALE_PORT: 18080
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+          compose() {
+            docker compose --project-name vale-tag-smoke --file compose.yaml "$@"
+          }
+          cleanup() {
+            compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          compose config --quiet
+          compose build
+          compose up --detach
+          healthy=0
+          for _ in $(seq 1 60); do
+            if compose exec -T vale curl --fail --silent \
+                http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
+              healthy=1
+              break
+            fi
+            sleep 1
+          done
+          test "$healthy" -eq 1
+          container_id="$(compose ps --quiet vale)"
+          test -n "$container_id"
+          test "$(docker inspect --format '{{.Config.User}}' "$container_id")" = "10001:10001"
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$container_id")" = "true"
+          test "$(docker inspect --format '{{json .HostConfig.CapDrop}}' "$container_id")" = '["ALL"]'
+          test "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' "$container_id")" = \
+            "https://github.com/Dankpaws/vale"
+          compose exec -T vale grep --fixed-strings --quiet \
+            "$VALE_BUILD_COMMIT" /usr/share/doc/vale/SOURCE_OFFER.txt
+          compose exec -T vale grep --fixed-strings --quiet \
+            "https://github.com/Dankpaws/vale" /usr/share/doc/vale/SOURCE_OFFER.txt
+          package_version="$(awk -F '"' '/^version = "/ { print $2; exit }' Cargo.toml)"
+          test -n "$package_version"
+          version="$(compose exec -T vale /usr/local/bin/vale --version)"
+          test "$version" = "Vale $package_version ($VALE_BUILD_COMMIT)"
+
+  build:
+    name: Linux ${{ matrix.arch }}
+    needs: [quality, powershell, container-smoke]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            platform: linux/amd64
+            target: x86_64-unknown-linux-gnu.2.31
+          - arch: aarch64
+            platform: linux/arm64
+            target: aarch64-unknown-linux-gnu.2.31
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up emulation for cross-architecture builds
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+
+      - name: Build the fork and package the binary
+        env:
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+          TARGET: ${{ matrix.target }}
+          VALE_BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/vale-root-$ARCH"
+          package="$RUNNER_TEMP/vale-package-$ARCH"
+          rm -rf "$root" "$package"
+          mkdir -p "$package/static/fonts"
+          docker buildx build \
+            --platform "$PLATFORM" \
+            --build-arg VALE_BUILD_COMMIT="$VALE_BUILD_COMMIT" \
+            --target runtime \
+            --output "type=local,dest=$root" \
+            .
+          test -x "$root/usr/local/bin/vale"
+          install -m 0755 "$root/usr/local/bin/vale" "$package/vale"
+          install -m 0644 LICENSE "$package/LICENSE"
+          install -m 0644 CREDITS "$package/CREDITS"
+          install -m 0644 THIRD_PARTY.md "$package/THIRD_PARTY.md"
+          install -m 0644 THIRD_PARTY_LICENSES.html "$package/THIRD_PARTY_LICENSES.html"
+          install -m 0644 static/hls.LICENSE.txt "$package/static/hls.LICENSE.txt"
+          install -m 0644 static/fonts/OFL.txt "$package/static/fonts/OFL.txt"
+          cat > "$package/SOURCE_OFFER.txt" <<EOF
+          This Vale binary corresponds to source commit $VALE_BUILD_COMMIT.
+
+          Complete corresponding source is published with release $GITHUB_REF_NAME:
+          $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME
+
+          Vale and its Redlib-derived source are licensed under AGPL-3.0.
+          EOF
+          archive="vale-$TARGET.tar.gz"
+          tar --sort=name --mtime='UTC 1970-01-01' \
+            --owner=0 --group=0 --numeric-owner \
+            -cf - -C "$package" \
+            vale LICENSE CREDITS THIRD_PARTY.md THIRD_PARTY_LICENSES.html SOURCE_OFFER.txt \
+            static/hls.LICENSE.txt static/fonts/OFL.txt | gzip -n > "$RUNNER_TEMP/$archive"
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum "$archive" > "$archive.sha256"
+            sha512sum "$archive" > "$archive.sha512"
+          )
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: vale-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/vale-*.tar.gz
+            ${{ runner.temp }}/vale-*.sha256
+            ${{ runner.temp }}/vale-*.sha512
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish tagged release assets
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      artifact-metadata: write
+      contents: write
+      id-token: write
+    steps:
+      - name: Check out the exact tagged source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download all architecture assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: vale-*
+          path: release-downloads
+          merge-multiple: true
+
+      - name: Assemble checksums
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          find release-downloads -type f \
+            \( -name '*.tar.gz' -o -name '*.sha256' -o -name '*.sha512' \) \
+            -exec cp {} release-assets/ \;
+          (
+            cd release-assets
+            source_archive="vale-${GITHUB_REF_NAME}-source.tar.gz"
+            git -C "$GITHUB_WORKSPACE" archive \
+              --format=tar \
+              --prefix="vale-${GITHUB_REF_NAME}-source/" \
+              "$GITHUB_SHA" | gzip -n > "$source_archive"
+            sha256sum "$source_archive" > "$source_archive.sha256"
+            sha512sum "$source_archive" > "$source_archive.sha512"
+            sha256sum vale-*.tar.gz > SHA256SUMS
+          )
+
+      - name: Sign build provenance with GitHub and Sigstore
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: release-assets/*.tar.gz
+
+      - name: Include the portable Sigstore bundle
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: cp "$ATTESTATION_BUNDLE" "release-assets/vale-${GITHUB_REF_NAME}.sigstore.json"
+
+      - name: Publish the immutable release assets
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        with:
+          name: Vale ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

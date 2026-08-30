@@ -1,0 +1,18 @@
+<article class="archive-comment" id="comment-{{ id }}">
+	<header>
+		<strong>u/{{ author }}</strong>
+		<span aria-hidden="true">·</span>
+		<time>{{ created }}</time>
+		<span aria-hidden="true">·</span>
+		<span>{% if score_hidden %}score hidden{% else %}{{ score }} {% if score == 1 %}point{% else %}points{% endif %}{% endif %}</span>
+	</header>
+	<div class="archive-comment-body">{{ body_html|safe }}</div>
+	{% if !replies.is_empty() %}
+	<details class="archive-replies" open>
+		<summary>{{ replies.len() }} direct {% if replies.len() == 1 %}reply{% else %}replies{% endif %}</summary>
+		<div>
+			{% for reply in replies -%}{{ reply.render().unwrap_or_default()|safe }}{%- endfor %}
+		</div>
+	</details>
+	{% endif %}
+</article>

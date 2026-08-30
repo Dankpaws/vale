@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}
+	{% if single_thread %}
+		{{ comments[0].root.author.name }} comments on {{ post.title }} - r/{{ post.community }}
+	{% else %}
+		{{ post.title }} - r/{{ post.community }}
+	{% endif %}
+{% endblock %}
+
+{% block search %}
+	{% call utils::search(["/r/", post.community.as_str()].concat(), "") %}
+{% endblock %}
+
+{% block root %}/r/{{ post.community }}{% endblock %}{% block location %}r/{{ post.community }}{% endblock %}
+{% block head %}
+	{% call super() %}
+	<!-- Meta Tags -->
+	<meta name="author" content="u/{{ post.author.name }}">
+	<meta name="title" content="{{ post.title }} - r/{{ post.community }}">
+	<meta property="og:title" content="{{ post.title }} - r/{{ post.community }}">
+	<meta property="og:description" content="View through Vale, a private Reddit reader.">
+	<meta property="og:url" content="{{ post.permalink }}">
+	<meta property="twitter:url" content="{{ post.permalink }}">
+	<meta property="twitter:title" content="{{ post.title }} - r/{{ post.community }}">
+	<meta property="twitter:description" content="View through Vale, a private Reddit reader.">
+	{% if post.post_type == "image" %}
+	<meta property="og:type" content="image">
+	<meta property="og:image" content="{{ post.thumbnail.url }}">
+	<meta property="twitter:card" content="summary_large_image">
+	<meta property="twitter:image" content="{{ post.thumbnail.url }}">
+	{% else if post.post_type == "video" || post.post_type == "gif" %}
+	<meta property="twitter:card" content="video">
+	<meta property="og:type" content="video">
+	<meta property="og:video" content="{{ post.media.url }}">
+	<meta property="og:video:type" content="video/mp4">
+	{% else %}
+	<meta property="og:type" content="website">
+	{% if single_thread %}
+	<script src="/highlighted.js" defer></script>
+	{% endif %}
+	{% endif %}
+{% endblock %}
+
+{% block subscriptions %}
+	{% call utils::sub_list(post.community.as_str()) %}
+{% endblock %}
+
+{% block content %}
+	<span class="post-anchor" id="post-top" tabindex="-1"></span>
+	<div class="post-page-layout">
+	<div id="column_one" class="post-reading">
+		{% call utils::post(post) %}
+
+		<!-- SORT FORM -->
+	       <div
+	        id="comments"
+	        tabindex="-1"
+	        data-thread-post-id="t3_{{ post.id }}"
+	        data-thread-comment-count="{{ thread_summary.comment_count }}"
+	        data-thread-reported-comment-count="{{ thread_summary.reported_comment_count }}"
+	        data-thread-continuation-count="{{ thread_summary.continuation_count }}"
+	        data-thread-pending-continuations="{{ thread_summary.pending_continuation_count }}"
+	        data-thread-unavailable-continuations="{{ thread_summary.unavailable_continuation_count }}"
+	        data-thread-estimated-remaining="{{ thread_summary.estimated_remaining }}"
+	        data-thread-unaccounted-comment-count="{{ thread_summary.unaccounted_comment_count }}"
+	        data-thread-incomplete-ancestry-count="{{ thread_summary.incomplete_ancestry_count }}"
+	        data-thread-coverage="{% if thread_summary.complete %}complete{% else %}incomplete{% endif %}"
+	        data-thread-search-query="{{ comment_query }}"
+	        data-thread-search-match-count="{{ thread_search.match_count }}"
+	        data-thread-search-searched-count="{{ thread_search.searched_comment_count }}"
+	        data-thread-search-filtered-count="{{ thread_search.excluded_filtered_comment_count }}"
+	        data-thread-search-coverage="{% if thread_search.coverage_complete %}complete{% else %}incomplete{% endif %}"
+	       >
+	       <div id="commentQueryForms">
+		<form id="sort">
+			<p id="comment_count">{{post.comments.0}} {% if post.comments.0 == "1" %}comment{% else %}comments{% endif %} <span id="sorted_by">sorted by </span></p>
+			<label class="sr-only" for="commentSortSelect">Sort comments by</label>
+			<select name="sort" title="Sort comments by" id="commentSortSelect" data-comment-sort>
+				{% call utils::options(sort, ["confidence", "top", "new", "controversial", "old"], "confidence") %}
+	      </select>
+			{% if comment_query != "" %}<input type="hidden" name="q" value="{{ comment_query }}"><input type="hidden" name="type" value="comment">{% endif %}
+      </form>
+      <!-- SEARCH FORM -->
+	      <form id="comment-search-form" role="search" aria-label="Search comments">
+	        <label class="sr-only" for="comment-search-input">Search comments</label>
+		        <input id="comment-search-input" class="commentQuery" type="search" name="q" value="{{ comment_query }}" placeholder="Search comments" maxlength="160" enterkeyhint="search" aria-describedby="comment-search-help">
+		        <input type="hidden" name="type" value="comment">
+		        {% if sort != "" %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+	      </form>
+	      </div>
+	      </div>
+
+		<section class="comment-search-summary{% if !thread_search.coverage_complete %} is-incomplete{% endif %}" data-comment-search-panel aria-labelledby="comment-search-heading" {% if comment_query == "" %}hidden{% endif %}>
+			<div class="comment-search-copy">
+				<strong id="comment-search-heading" data-comment-search-heading>{{ thread_search.match_count }} matching comments</strong>
+				<span id="comment-search-help" data-comment-search-coverage>{% if thread_search.coverage_complete %}All available searchable comments searched.{% else %}Loaded comments searched; more replies may remain.{% endif %}</span>
+				<small data-comment-search-detail>{{ thread_search.searched_comment_count }} searchable comments checked.</small>
+			</div>
+			<div class="comment-search-actions">
+				<span data-comment-search-position>{% if thread_search.match_count > 0 %}Match 1 of {{ thread_search.match_count }}{% else %}No loaded matches{% endif %}</span>
+				<button id="comment-search-previous" type="button" class="quiet-button" data-comment-search-previous aria-label="Previous comment match">Previous</button>
+				<button id="comment-search-next" type="button" class="quiet-button" data-comment-search-next aria-label="Next comment match">Next</button>
+				<button id="comment-search-load" type="button" class="quiet-button" data-comment-search-load {% if thread_summary.pending_continuation_count == 0 %}hidden{% endif %}>Search remaining replies</button>
+				<a id="allCommentsLink" class="quiet-button" data-comment-search-clear href="{{ url_without_query }}#comments">Clear</a>
+			</div>
+		</section>
+
+		{% if prefs.comment_filter_keywords != "" %}
+		<div class="comment-filter-bar" data-comment-filter-bar {% if filtered_comment_count == 0 %}hidden{% endif %}>
+			<div>
+				<span class="comment-filter-icon" aria-hidden="true">✦</span>
+				<span><strong><span data-comment-filter-count>{{ filtered_comment_count }}</span> filtered</strong><small>Keyword-matched comments stay tucked away.</small></span>
+			</div>
+			<div class="comment-filter-actions">
+				<a href="/settings#comment_filter_keywords">Edit filters</a>
+				<button type="button" data-comment-filter-toggle aria-pressed="false"><span data-comment-filter-label>Show filtered comments</span></button>
+			</div>
+		</div>
+		{% endif %}
+
+		<!-- COMMENTS -->
+		<div class="thread-projection" data-thread-projection>
+		<p class="sr-only" data-thread-status role="status" aria-live="polite"></p>
+		{% for group in comments -%}
+		<div class="thread thread-group" data-thread-group data-thread-group-id="{{ group.id }}" data-thread-post-id="t3_{{ post.id }}" data-thread-sort="{{ sort }}">
+			{% if single_thread %}
+			<p class="thread_nav"><a href="{{ post.permalink }}">View all comments</a></p>
+			{% if group.root.parent_kind == "t1" %}
+			<p class="thread_nav"><a href="?context=9999">Show parent comments</a></p>
+			{% endif %}
+			{% endif %}
+
+			{{ group.root.render().unwrap_or_default()|safe }}
+			{% if !group.descendants.is_empty() %}
+			<div
+				id="{{ group.root.reply_region_id }}"
+				class="thread-descendants"
+				data-thread-descendants
+				data-thread-root-id="{{ group.id }}"
+				{% if group.root.prefs.collapse_child_comments == "on" %}hidden{% endif %}
+			>
+				{% for node in group.descendants -%}{{ node.render().unwrap_or_default()|safe }}{%- endfor %}
+			</div>
+			{% endif %}
+		</div>
+		{%- endfor %}
+		</div>
+
+	</div>
+	<aside class="reading-tools" aria-label="Reading tools">
+		<div class="reading-tools-inner">
+			<div class="reading-context"><a href="/r/{{ post.community }}">r/{{ post.community }}</a><small>{{ post.domain }}</small></div>
+			<div class="reading-tool reading-save">
+				<strong>Save offline</strong>
+				{% if archive_id.is_empty() %}
+				<form action="/posts/{{ post.id }}/archive" method="POST" data-offline-save><button class="quiet-button" type="submit" data-offline-save-submit>Save</button><span class="sr-only" role="status" aria-live="polite" data-offline-save-status></span></form>
+				{% else if archive_status == "failed" %}
+				<form action="/posts/{{ post.id }}/archive" method="POST" data-offline-save><button class="quiet-button" type="submit" data-offline-save-submit>Retry</button><span class="sr-only" role="status" aria-live="polite" data-offline-save-status></span></form>
+				{% else %}
+				<a class="quiet-button archive-status status-{{ archive_status }}" href="/saved/{{ archive_id }}" aria-label="{{ archive_status_label }}. Open offline save details.">Details</a>
+				{% endif %}
+			</div>
+				<form class="reading-tool-hide-form" action="/posts/{{ post.id }}/{% if post_hidden %}unhide{% else %}hide{% endif %}" method="POST" data-post-page-hide-form>
+					<input type="hidden" name="return_to" value="{{ url }}">
+					<button type="submit" class="reading-tool-button" data-post-page-hide="{{ post.id }}" aria-pressed="{% if post_hidden %}true{% else %}false{% endif %}"><span data-post-page-hide-label>{% if post_hidden %}Hidden{% else %}Hide post{% endif %}</span><small class="sr-only" data-post-page-hide-status>{% if post_hidden %}Press to restore this post to feeds{% else %}Press to remove this post from feeds{% endif %}</small></button>
+				</form>
+			<a class="reading-tool-link" href="#comments" data-reading-jump><span data-reading-jump-label>Jump to comments</span><span data-reading-jump-icon aria-hidden="true">↓</span></a>
+		</div>
+	</aside>
+	</div>
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Sign in · Vale{% endblock %}
+
+{% block body %}
+<main class="auth-page">
+	<section class="auth-card" aria-labelledby="login-title">
+		<span class="brand-mark auth-brand" aria-hidden="true"><span class="brand-eye"></span></span>
+		<span class="eyebrow">PRIVATE READER</span>
+		<h1 id="login-title">Welcome back.</h1>
+		<p>Your feeds, filters, settings, and reading history are waiting.</p>
+		{% if !error.is_empty() %}<div class="auth-error" role="alert">{{ error }}</div>{% endif %}
+		<form action="/login" method="POST" class="auth-form">
+			<input type="hidden" name="next" value="{{ next }}">
+			<label for="login-username">Username</label>
+			<input id="login-username" name="username" type="text" autocomplete="username" autocapitalize="none" maxlength="32" required autofocus>
+			<label for="login-password">Password</label>
+			<input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="128" required>
+			<button class="primary-button" type="submit">Sign in</button>
+		</form>
+		<small class="auth-boundary">Available only through your existing private network path.</small>
+	</section>
+</main>
+{% endblock %}
+
+{% block footer %}{% endblock %}

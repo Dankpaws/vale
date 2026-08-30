@@ -1,0 +1,21 @@
+* text=auto
+
+# Keep files executed by Linux, WSL2, Docker, and GitHub Actions byte-safe.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.service text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+
+# PowerShell accepts LF and keeping one text convention makes source archives
+# and cross-platform reviews predictable.
+*.ps1 text eol=lf
+
+# Never let Git inspect or rewrite packaged artwork, fonts, or fixtures.
+*.avif binary
+*.ico binary
+*.jpg binary
+*.png binary
+*.webp binary
+*.woff2 binary

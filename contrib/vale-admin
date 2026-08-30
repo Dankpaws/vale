@@ -1,0 +1,23 @@
+#!/bin/sh
+# Run local Vale administration commands with the installed service settings.
+# The executable receives the terminal directly, so password prompts remain
+# interactive and are never placed in an environment variable or argument.
+set -eu
+
+if [ -r /etc/vale/vale.env ]; then
+  set -a
+  # This file is created root-owned by install.sh and contains no credentials.
+  # shellcheck disable=SC1091
+  . /etc/vale/vale.env
+  set +a
+fi
+
+if [ "$(id -u)" -eq 0 ]; then
+  command -v runuser >/dev/null 2>&1 || {
+    echo "runuser is required to preserve Vale state ownership" >&2
+    exit 1
+  }
+  exec runuser --preserve-environment --user vale -- /usr/local/lib/vale/vale "$@"
+fi
+
+exec /usr/local/lib/vale/vale "$@"
