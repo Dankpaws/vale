@@ -12,22 +12,26 @@ public changes from a reviewed clean tree and a deliberately public history. A
 clean current working tree in the private repository is not proof that its old
 objects are safe to publish.
 
-The reviewed first release is `v0.36.0`, dated 2026-08-29. Enable GitHub
-private vulnerability reporting before announcing it so `SECURITY.md` has a
-working non-public channel.
+The reviewed first binary release is `v0.36.1`, dated 2026-08-30. The signed,
+verified `v0.36.0` source tag remains attached to the parentless public root,
+but its tagged workflow failed before publishing a GitHub Release or any
+assets. Never move, delete, or reuse that failed source tag. Enable GitHub
+private vulnerability reporting before announcing `v0.36.1` so `SECURITY.md`
+has a working non-public channel.
 
-The initial public commit must use the verified maintainer identity
-`Dankpaws <322286514+Dankpaws@users.noreply.github.com>` and carry an annotated
-`v0.36.0` tag after every check below passes. An unsigned tag may exist only in
-an isolated local review candidate. Before public announcement, create the
-public tag with the maintainer's configured SSH/GPG signing identity or a
-GitHub tag/release flow that reports a verified signature, then verify that
-status independently. Never publish the unsigned review tag while describing
-the release reference as signed. Before creating or updating the public
-repository:
+The initial public commit and every public follow-up must use the verified
+maintainer identity `Dankpaws <322286514+Dankpaws@users.noreply.github.com>`.
+The first binary release must carry an annotated `v0.36.1` tag after every
+check below passes. An unsigned tag may exist only in an isolated local review
+candidate. Before public announcement, create the public tag with the
+maintainer's configured SSH/GPG signing identity or a GitHub tag/release flow
+that reports a verified signature, then verify that status independently.
+Never publish the unsigned review tag while describing the release reference
+as signed. Before creating or updating the public repository:
 
 1. Confirm every copy-paste URL still names `Dankpaws/vale`, the release tag is
-   `v0.36.0` for this first release, and the dated changelog entry matches it.
+   `v0.36.1` for the first binary release, and the dated changelog entry
+   matches it.
    Later releases must use the `v<package-version>` tag shape enforced by the
    release workflow.
 2. Export only the reviewed source tree into a fresh directory without its

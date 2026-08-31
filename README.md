@@ -44,7 +44,7 @@ installs the systemd unit, and waits for the health check:
 ```sh
 git clone https://github.com/Dankpaws/vale.git
 cd vale
-git checkout v0.36.0
+git checkout v0.36.1
 sudo ./install.sh
 ```
 

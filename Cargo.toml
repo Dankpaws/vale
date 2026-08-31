@@ -2,7 +2,7 @@
 name = "redlib"
 description = "Vale, a quiet subscription-first reader for Reddit communities"
 license = "AGPL-3.0-only"
-version = "0.36.0"
+version = "0.36.1"
 publish = false
 readme = "README.md"
 repository = "https://github.com/Dankpaws/vale"

@@ -417,7 +417,9 @@ install_ffmpeg() {
   fi
   info "Installing ffmpeg with the host package manager"
   if command -v apt-get >/dev/null 2>&1; then
-    apt-get update && apt-get install --yes ffmpeg || true
+    if apt-get update; then
+      apt-get install --yes ffmpeg || true
+    fi
   elif command -v dnf >/dev/null 2>&1; then
     dnf install --assumeyes ffmpeg || true
   elif command -v apk >/dev/null 2>&1; then

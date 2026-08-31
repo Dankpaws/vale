@@ -6,7 +6,15 @@ called out separately from local regressions.
 
 ## Unreleased
 
-No user-visible changes have been recorded since 0.36.0.
+No user-visible changes have been recorded since 0.36.1.
+
+## 0.36.1 - 2026-08-30
+
+### Fixed
+
+- Made the optional Debian and Ubuntu FFmpeg installation use explicit
+  conditional control flow so the tagged ShellCheck gate passes while
+  preserving the installer's best-effort fallback behavior.
 
 ## 0.36.0 - 2026-08-29
 

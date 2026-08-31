@@ -40,9 +40,9 @@ give the script that tag's exact release-asset directory:
 ```sh
 git clone https://github.com/Dankpaws/vale.git
 cd vale
-git checkout v0.36.0
+git checkout v0.36.1
 sudo ./install.sh \
-  --release-base-url https://github.com/Dankpaws/vale/releases/download/v0.36.0
+  --release-base-url https://github.com/Dankpaws/vale/releases/download/v0.36.1
 ```
 
 The checksum detects corruption or a mismatched file, but a checksum fetched
@@ -52,7 +52,7 @@ identify the public repository explicitly:
 
 ```sh
 sudo ./install.sh \
-  --release-base-url https://github.com/Dankpaws/vale/releases/download/v0.36.0 \
+  --release-base-url https://github.com/Dankpaws/vale/releases/download/v0.36.1 \
   --github-repository Dankpaws/vale
 ```
 
@@ -104,9 +104,9 @@ Then check out the tagged release and install it:
 ```sh
 git clone https://github.com/Dankpaws/vale.git
 cd vale
-git checkout v0.36.0
+git checkout v0.36.1
 sudo ./install.sh \
-  --release-base-url https://github.com/Dankpaws/vale/releases/download/v0.36.0
+  --release-base-url https://github.com/Dankpaws/vale/releases/download/v0.36.1
 ```
 
 The script verifies the release checksum (and signed provenance when
@@ -168,7 +168,7 @@ Clone the release source and build the locked graph:
 ```sh
 git clone https://github.com/Dankpaws/vale.git
 cd vale
-git checkout v0.36.0
+git checkout v0.36.1
 export VALE_CHECKOUT="$(pwd -P)"
 cargo build --release --locked --bin redlib
 ```
@@ -288,7 +288,7 @@ Then, from a PowerShell checkout:
 ```powershell
 git clone https://github.com/Dankpaws/vale.git
 Set-Location vale
-git checkout v0.36.0
+git checkout v0.36.1
 Set-ExecutionPolicy -Scope Process Bypass
 .\install.ps1
 ```
@@ -314,7 +314,7 @@ these commands from the repository checkout so the Compose file and
 ```sh
 git clone https://github.com/Dankpaws/vale.git
 cd vale
-git checkout v0.36.0
+git checkout v0.36.1
 cp .env.example .env
 ```
 
