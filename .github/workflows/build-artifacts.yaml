@@ -154,7 +154,7 @@ jobs:
   build:
     name: Linux ${{ matrix.arch }}
     needs: [quality, powershell, container-smoke]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -168,9 +168,6 @@ jobs:
     steps:
       - name: Check out the tagged source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-
-      - name: Set up emulation for cross-architecture builds
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4

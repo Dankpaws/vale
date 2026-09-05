@@ -107,6 +107,9 @@ made since the August 30 release.
   a separate Rust 1.88 compatibility check. This addresses an optimized Linux
   link failure encountered with the older container compiler.
 
+- Build ARM64 containers and release archives on native GitHub-hosted ARM
+  runners instead of emulation, retaining the pinned container build inputs.
+
 ### Scope and upgrade notes
 
 - Reading features use server-backed profiles. Back up the profile database and

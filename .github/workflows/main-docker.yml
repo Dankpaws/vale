@@ -15,7 +15,7 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.platform }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -24,7 +24,6 @@ jobs:
           - linux/arm64
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
       - name: Build the fork without publishing it
         env:
