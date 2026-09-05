@@ -103,6 +103,10 @@ made since the August 30 release.
   false CDN 404 responses for encoded package-version URLs. Package signature
   and checksum verification remain enabled.
 
+- Align the pinned container release compiler with Rust 1.98, while retaining
+  a separate Rust 1.88 compatibility check. This addresses an optimized Linux
+  link failure encountered with the older container compiler.
+
 ### Scope and upgrade notes
 
 - Reading features use server-backed profiles. Back up the profile database and

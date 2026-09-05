@@ -3,10 +3,10 @@
 # The default image is built from this checkout.  It intentionally does not
 # download a mutable binary from an unrelated registry or repository.
 
-ARG RUST_VERSION=1.88.0
+ARG RUST_VERSION=1.98.0
 # Multi-architecture manifest digests are reviewed release inputs. Dependabot
 # proposes digest updates without silently floating either base image.
-ARG RUST_IMAGE=rust:1.88.0-bullseye@sha256:b315f988b86912bafa7afd39a6ded0a497bf850ec36578ca9a3bdd6a14d5db4e
+ARG RUST_IMAGE=rust:1.98.0-bullseye@sha256:4730e387a220a08a365c77da3096544dde214f9d796c16284d4be45438cad4a9
 ARG DEBIAN_IMAGE=debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 
 FROM ${RUST_IMAGE} AS builder
