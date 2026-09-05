@@ -360,6 +360,8 @@ pub struct GroupedPost {
 	pub permalink: String,
 	pub score: String,
 	pub comments: String,
+	pub comment_count: Option<u64>,
+	pub new_comments: u64,
 	pub created: String,
 	/// Internal stable-New ordering metadata. These are deliberately omitted
 	/// from serialized/template output; they only preserve representative and
@@ -398,6 +400,8 @@ pub struct Post {
 	pub created_ts: u64,
 	pub num_duplicates: u64,
 	pub comments: (String, String),
+	pub comment_count: Option<u64>,
+	pub new_comments: u64,
 	pub gallery: Vec<GalleryMedia>,
 	pub awards: Awards,
 	pub nsfw: bool,
@@ -439,6 +443,11 @@ impl Post {
 	/// Fetch one bounded page while retaining raw fullnames and a deterministic
 	/// content fingerprint for the bounded listing accumulator.
 	pub async fn fetch_page(path: &str, quarantine: bool) -> Result<ListingPage, String> {
+		Self::fetch_page_with_limit(path, quarantine, LISTING_PAGE_SIZE).await
+	}
+
+	/// Fetch an explicitly bounded batch for Vale's listing accumulator.
+	pub(crate) async fn fetch_page_with_limit(path: &str, quarantine: bool, record_limit: usize) -> Result<ListingPage, String> {
 		// Send a request to the url
 		let res = match json(path.to_string(), quarantine).await {
 			// If success, receive JSON in response
@@ -452,7 +461,7 @@ impl Post {
 			return Err("No posts found".to_string());
 		};
 		let upstream_record_count = post_list.len();
-		let post_list = &post_list[..post_list.len().min(LISTING_PAGE_SIZE)];
+		let post_list = &post_list[..post_list.len().min(record_limit)];
 		let first_fullname = post_list.first().map(|post| val(post, "name")).unwrap_or_default();
 		let raw_fullnames = post_list.iter().map(|post| val(post, "name")).collect::<Vec<_>>();
 		let reddit_after = res["data"]["after"].as_str().unwrap_or_default();
@@ -552,6 +561,8 @@ impl Post {
 				created_ts,
 				num_duplicates: post["data"]["num_duplicates"].as_u64().unwrap_or(0),
 				comments: format_num(data["num_comments"].as_i64().unwrap_or_default()),
+				comment_count: data["num_comments"].as_u64(),
+				new_comments: 0,
 				gallery,
 				awards,
 				nsfw: post["data"]["over_18"].as_bool().unwrap_or_default(),
@@ -674,6 +685,8 @@ pub fn grouped_post(post: Post) -> GroupedPost {
 		permalink: post.permalink,
 		score: post.score.0,
 		comments: post.comments.0,
+		comment_count: post.comment_count,
+		new_comments: post.new_comments,
 		created: post.created,
 		created_ts: post.created_ts,
 		stickied: post.flags.stickied,
@@ -780,6 +793,9 @@ pub fn canonical_feed_url(feed_slug: &str, sort: &str, query: Option<&str>) -> S
 /// community, post, search, or compatibility routes.
 pub fn is_canonical_feed_home(url: &str) -> bool {
 	let path = url.split_once('?').map_or(url, |(path, _)| path);
+	if path == "/" {
+		return true;
+	}
 	let mut segments = path.trim_start_matches('/').split('/');
 	matches!(
 		(segments.next(), segments.next(), segments.next(), segments.next()),
@@ -806,6 +822,9 @@ pub struct Comment {
 	pub edited: (String, String),
 	pub replies: Vec<Comment>,
 	pub highlighted: bool,
+	pub created_ts: i64,
+	pub is_new: bool,
+	pub activity_visit: String,
 	pub awards: Awards,
 	pub collapsed: bool,
 	pub is_filtered: bool,
@@ -1731,6 +1750,8 @@ pub async fn parse_post(post: &Value) -> Post {
 		created_ts,
 		num_duplicates: post["data"]["num_duplicates"].as_u64().unwrap_or(0),
 		comments: format_num(post["data"]["num_comments"].as_i64().unwrap_or_default()),
+		comment_count: post["data"]["num_comments"].as_u64(),
+		new_comments: 0,
 		gallery,
 		awards,
 		nsfw: post["data"]["over_18"].as_bool().unwrap_or_default(),
@@ -2448,7 +2469,7 @@ mod tests {
 		assert_eq!(canonical_feed_path("ai-homelab", "new"), "/f/ai-homelab/new");
 		assert!(is_canonical_feed_home("/f/ai-homelab/hot"));
 		assert!(is_canonical_feed_home("/f/ai-homelab/top?t=week"));
-		assert!(!is_canonical_feed_home("/"));
+		assert!(is_canonical_feed_home("/"));
 		assert!(!is_canonical_feed_home("/f/ai-homelab"));
 		assert!(!is_canonical_feed_home("/r/rust/hot"));
 		assert!(!is_canonical_feed_home("/f/ai-homelab/best"));

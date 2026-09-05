@@ -53,6 +53,7 @@ pub struct NormalizedComment {
 	pub score: (String, String),
 	pub rel_time: String,
 	pub created: String,
+	pub created_ts: i64,
 	pub edited: (String, String),
 	pub highlighted: bool,
 	pub awards: Awards,
@@ -196,6 +197,13 @@ pub struct ThreadModel {
 }
 
 impl ThreadModel {
+	pub fn observed_comments(&self) -> impl Iterator<Item = &NormalizedComment> {
+		self.preorder.iter().filter_map(|id| match self.nodes.get(id) {
+			Some(ThreadNode::Comment(comment)) => Some(comment.as_ref()),
+			_ => None,
+		})
+	}
+
 	#[allow(clippy::too_many_arguments)]
 	pub fn from_listing(
 		json: &Value,
@@ -543,6 +551,7 @@ impl ThreadModel {
 				},
 				rel_time,
 				created,
+				created_ts: unix_time as i64,
 				edited,
 				highlighted: val(thing, "id") == highlighted_comment,
 				awards: Awards::parse(&data["all_awardings"]),
@@ -653,6 +662,9 @@ impl ThreadModel {
 					score: comment.score,
 					rel_time: comment.rel_time,
 					created: comment.created,
+					created_ts: comment.created_ts,
+					is_new: false,
+					activity_visit: String::new(),
 					edited: comment.edited,
 					replies: Vec::new(),
 					highlighted: comment.highlighted,
@@ -700,6 +712,9 @@ impl ThreadModel {
 					score: (String::new(), String::new()),
 					rel_time: String::new(),
 					created: String::new(),
+					created_ts: 0,
+					is_new: false,
+					activity_visit: String::new(),
 					edited: (String::new(), String::new()),
 					replies: Vec::new(),
 					highlighted: false,

@@ -200,7 +200,7 @@ const createHarness = ({ attach = "immediate", native = false, userAgent = "", v
 	vm.createContext(sandbox);
 	vm.runInContext(playerSource, sandbox, { filename: "playHLSVideo.js" });
 
-	return { clock, failure, fetches, hlsInstances, status, video };
+	return { clock, failure, fetches, hlsInstances, status, video, media: sandbox.ValeMedia };
 };
 
 test("Apple browsers prepare an audio-bearing stream with native HLS", async () => {
@@ -245,4 +245,50 @@ test("a stalled HLS.js attachment falls back to native HLS after four seconds", 
 	assert.equal(harness.status.hidden, true);
 	assert.equal(harness.failure.hidden, true);
 	assert.deepEqual(harness.clock.pendingDelays(), []);
+});
+
+for (const native of [false, true]) {
+ test(`closing ${native ? "native" : "HLS.js"} video releases resources and reopening restores position`, async () => {
+  const h = createHarness({ native, vendor: native ? "Apple Computer, Inc." : "" });
+  await settle();
+  h.video.currentTime = 12;
+  h.video.readyState = 1;
+  h.media.pause(h.video);
+  assert.equal(h.video.src, "");
+  if (!native) assert.equal(h.hlsInstances[0].destroyed, true);
+  assert.deepEqual(h.clock.pendingDelays(), []);
+  h.video.currentTime = 0;
+  h.media.pause(h.video); // Repeated close must not erase the saved position.
+  h.media.initialize(h.video);
+  await settle();
+  assert.equal(h.video.currentTime, 12);
+  if (!native) assert.equal(h.hlsInstances.length, 2);
+  assert.equal(h.failure.hidden, true);
+ });
+}
+
+test("closing during HLS attachment cancels preparation without a late failure", async () => {
+ const h = createHarness({ attach: "stalled" });
+ await settle();
+ h.media.pause(h.video);
+ assert.equal(h.hlsInstances[0].destroyed, true);
+ assert.deepEqual(h.clock.pendingDelays(), []);
+ h.clock.fireDelay(4000);
+ h.clock.fireDelay(30000);
+ assert.equal(h.failure.hidden, true);
+});
+
+test("HLS resume waits for metadata before seeking", async () => {
+ const h = createHarness();
+ await settle();
+ h.video.currentTime = 12;
+ h.media.pause(h.video);
+ h.video.currentTime = 0;
+ h.video.readyState = 0;
+ h.media.initialize(h.video);
+ await settle();
+ assert.equal(h.video.currentTime, 0);
+ h.video.readyState = 1;
+ h.video.dispatch("loadedmetadata");
+ assert.equal(h.video.currentTime, 12);
 });

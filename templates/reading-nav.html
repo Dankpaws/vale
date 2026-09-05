@@ -1,0 +1,10 @@
+<nav class="reading-sections" aria-label="Reading workspace">
+<a href="/reading" {% if url == "/reading" %}aria-current="page"{% endif %}>Continue</a>
+<a href="/reading/editions" {% if url.starts_with("/reading/editions") %}aria-current="page"{% endif %}>Editions</a>
+<a href="/reading/library" {% if url.starts_with("/reading/library") %}aria-current="page"{% endif %}>Library</a>
+<a href="/reading/stories" {% if url.starts_with("/reading/stories") %}aria-current="page"{% endif %}>Stories</a>
+<a href="/reading/agenda" {% if url.starts_with("/reading/agenda") %}aria-current="page"{% endif %}>Watches</a>
+<a href="/reading/sources" {% if url.starts_with("/reading/sources") %}aria-current="page"{% endif %}>Sources</a>
+<a href="/reading/filters" {% if url.starts_with("/reading/filters") %}aria-current="page"{% endif %}>Filters</a>
+<a href="/offline.html">Offline packs</a>
+</nav>

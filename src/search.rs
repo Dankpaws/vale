@@ -329,7 +329,8 @@ async fn find_named(req: Request<Body>, mut prefs: Preferences) -> Result<Respon
 		Err(_) => return listing::policy_unavailable_response(req, fragment_mode).await,
 	};
 	match listing::accumulate(&path, scope == SearchScope::Feed, policy).await {
-		Ok(result) => {
+		Ok(mut result) => {
+			crate::activity::annotate(&req, &mut result.posts)?;
 			let previous_url = result.previous_url(&canonical_url);
 			let next_url = result.next_url(&canonical_url);
 			let all_posts_filtered = result.all_posts_filtered();
@@ -526,7 +527,8 @@ async fn find_community(req: Request<Body>, prefs: Preferences) -> Result<Respon
 		Err(_) => return listing::policy_unavailable_response(req, fragment_mode).await,
 	};
 	match listing::accumulate(&path, quarantined, policy).await {
-		Ok(result) => {
+		Ok(mut result) => {
+			crate::activity::annotate(&req, &mut result.posts)?;
 			let previous_url = result.previous_url(&url);
 			let next_url = result.next_url(&url);
 			let all_posts_filtered = result.all_posts_filtered();

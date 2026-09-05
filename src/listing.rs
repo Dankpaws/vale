@@ -1,8 +1,11 @@
 //! Bounded, vacancy-replacing post listings.
 //!
-//! A render may inspect at most four upstream pages of 25 raw records. The
-//! resulting snapshot is authoritative for at most 25 visible top-level post
-//! representatives; it is deliberately not an infinite-scroll protocol.
+//! A render may inspect at most 100 raw records. Grouped listings request that
+//! budget in one batch; ungrouped listings begin with the ordinary 25-record
+//! page and request only the remaining budget when filtering leaves vacancies.
+//! The resulting snapshot is authoritative for at most 25 visible top-level
+//! post representatives; enhanced clients may follow its safe continuation
+//! cursor.
 
 use crate::{
 	account,
@@ -48,6 +51,7 @@ pub struct ListingDiagnostics {
 
 #[derive(Clone, Debug)]
 pub struct ListingPolicy {
+	reading_rules: Vec<crate::reading_filters::Rule>,
 	filters: HashSet<String>,
 	hidden_ids: HashSet<String>,
 	allowed_communities: Option<HashSet<String>>,
@@ -59,6 +63,7 @@ pub struct ListingPolicy {
 impl ListingPolicy {
 	pub fn for_request(request: &Request<Body>, allowed_communities: Option<Vec<String>>, group_exact_content: bool, sort_new_with_stickies: bool) -> Result<Self, String> {
 		Ok(Self {
+			reading_rules: crate::reading_filters::for_listing(request, allowed_communities.as_deref())?,
 			filters: get_filters(request),
 			hidden_ids: account::hidden_post_ids_for_listing(request)?,
 			allowed_communities: allowed_communities.map(|communities| communities.into_iter().map(|community| community.to_ascii_lowercase()).collect::<HashSet<_>>()),
@@ -71,6 +76,7 @@ impl ListingPolicy {
 	#[cfg(test)]
 	fn test_default() -> Self {
 		Self {
+			reading_rules: Vec::new(),
 			filters: HashSet::new(),
 			hidden_ids: HashSet::new(),
 			allowed_communities: None,
@@ -178,7 +184,7 @@ impl ListingAccumulator {
 		}
 
 		if page.posts.len() != page.raw_fullnames.len()
-			|| page.posts.len() > LISTING_PAGE_SIZE
+			|| self.diagnostics.raw_records.saturating_add(page.posts.len()) > MAX_LISTING_RAW_RECORDS
 			|| page.fingerprint.is_empty()
 			|| !self.seen_fingerprints.insert(page.fingerprint.clone())
 		{
@@ -223,7 +229,10 @@ impl ListingAccumulator {
 				self.diagnostics.membership_filtered = self.diagnostics.membership_filtered.saturating_add(1);
 				continue;
 			}
-			if self.policy.filters.contains(&post.community) || self.policy.filters.contains(&format!("u_{}", post.author.name)) {
+			if self.policy.filters.contains(&post.community)
+				|| self.policy.filters.contains(&format!("u_{}", post.author.name))
+				|| self.policy.reading_rules.iter().any(|rule| rule.hides(&post))
+			{
 				self.diagnostics.profile_filtered = self.diagnostics.profile_filtered.saturating_add(1);
 				continue;
 			}
@@ -307,8 +316,8 @@ impl ListingAccumulator {
 
 	fn finish_budget(mut self) -> ListingResult {
 		if self.target_boundary.is_empty() {
-			self.next_cursor.clear();
-			self.finish(ListingStatus::Retry)
+			self.next_cursor = self.continuation_cursor.clone();
+			self.finish(ListingStatus::Complete)
 		} else {
 			self.next_cursor = self.target_boundary.clone();
 			self.finish(ListingStatus::Complete)
@@ -340,14 +349,28 @@ impl ListingAccumulator {
 	}
 }
 
+/// One bounded batch with the same eligibility rules as normal listings.
+pub(crate) async fn edition_batch(path: &str, policy: ListingPolicy) -> Result<Vec<Post>, String> {
+	let page = Post::fetch_page_with_limit(path, false, 25).await?;
+	let mut accumulator = ListingAccumulator::new(policy);
+	accumulator.accept_page(page, "");
+	Ok(accumulator.finish_budget().posts)
+}
+
 /// Fetch and accumulate a complete bounded listing snapshot.
 pub async fn accumulate(path: &str, quarantine: bool, policy: ListingPolicy) -> Result<ListingResult, String> {
 	let mut accumulator = ListingAccumulator::new(policy);
-	let mut request_path = path.to_string();
 	let mut requested_after = query_value(path, "after").unwrap_or_default();
 
 	for request_index in 0..MAX_LISTING_REQUESTS {
-		let page = match Post::fetch_page(&request_path, quarantine).await {
+		let remaining = MAX_LISTING_RAW_RECORDS.saturating_sub(accumulator.diagnostics.raw_records);
+		let request_limit = if request_index == 0 && !accumulator.policy.group_exact_content {
+			LISTING_PAGE_SIZE
+		} else {
+			remaining
+		};
+		let request_path = upstream_batch_path(path, (request_index > 0).then_some(requested_after.as_str()), request_limit);
+		let page = match Post::fetch_page_with_limit(&request_path, quarantine, request_limit).await {
 			Ok(page) => page,
 			Err(message) if request_index == 0 => return Err(message),
 			Err(_) => return Ok(accumulator.finish_retry()),
@@ -356,12 +379,11 @@ pub async fn accumulate(path: &str, quarantine: bool, policy: ListingPolicy) -> 
 			PageDecision::Complete => return Ok(accumulator.finish(ListingStatus::Complete)),
 			PageDecision::End => return Ok(accumulator.finish(ListingStatus::End)),
 			PageDecision::Retry => return Ok(accumulator.finish_retry()),
-			PageDecision::Continue if request_index + 1 == MAX_LISTING_REQUESTS => {
+			PageDecision::Continue if accumulator.diagnostics.raw_records >= MAX_LISTING_RAW_RECORDS || request_index + 1 == MAX_LISTING_REQUESTS => {
 				return Ok(accumulator.finish_budget());
 			}
 			PageDecision::Continue => {
 				requested_after = accumulator.continuation_cursor.clone();
-				request_path = upstream_cursor_path(path, &requested_after);
 			}
 		}
 	}
@@ -406,20 +428,21 @@ fn query_value(path: &str, key: &str) -> Option<String> {
 		.find_map(|(name, value)| (name == key).then(|| value.into_owned()))
 }
 
-/// Replace upstream pagination with the next raw Reddit fullname while
-/// retaining only route/search semantics and the fixed page size.
-fn upstream_cursor_path(path: &str, after: &str) -> String {
+/// Retain route/search semantics while selecting an explicit bounded batch.
+fn upstream_batch_path(path: &str, after: Option<&str>, limit: usize) -> String {
 	let Ok(parsed) = Url::parse(&format!("https://vale.invalid{path}")) else {
 		return path.to_string();
 	};
 	let mut serializer = url::form_urlencoded::Serializer::new(String::new());
 	for (key, value) in parsed.query_pairs() {
-		if !is_internal_listing_parameter(&key) && !matches!(key.as_ref(), "after" | "before" | "limit") {
+		if !is_internal_listing_parameter(&key) && key != "limit" && (after.is_none() || !matches!(key.as_ref(), "after" | "before")) {
 			serializer.append_pair(&key, &value);
 		}
 	}
-	serializer.append_pair("after", after);
-	serializer.append_pair("limit", &LISTING_PAGE_SIZE.to_string());
+	if let Some(after) = after {
+		serializer.append_pair("after", after);
+	}
+	serializer.append_pair("limit", &limit.to_string());
 	format!("{}?{}", parsed.path(), serializer.finish())
 }
 
@@ -655,6 +678,22 @@ mod tests {
 	}
 
 	#[tokio::test]
+	async fn grouped_budget_fits_in_one_upstream_batch() {
+		let ids = (0..MAX_LISTING_RAW_RECORDS).map(|index| format!("post{index:03}")).collect::<Vec<_>>();
+		let refs = ids.iter().map(String::as_str).collect::<Vec<_>>();
+		let mut accumulator = ListingAccumulator::new(ListingPolicy {
+			group_exact_content: true,
+			..ListingPolicy::test_default()
+		});
+		assert_eq!(accumulator.accept_page(page(&refs, "t3_post099", "one-batch").await, ""), PageDecision::Continue);
+		let result = accumulator.finish_budget();
+		assert_eq!(result.posts.len(), LISTING_PAGE_SIZE);
+		assert_eq!(result.diagnostics.raw_records, MAX_LISTING_RAW_RECORDS);
+		assert_eq!(result.requests, 1);
+		assert_eq!(result.next_cursor, "t3_post024");
+	}
+
+	#[tokio::test]
 	async fn ungrouped_target_completes_without_unnecessary_tail_requests() {
 		let ids = (0..LISTING_PAGE_SIZE).map(|index| format!("post{index:02}")).collect::<Vec<_>>();
 		let refs = ids.iter().map(String::as_str).collect::<Vec<_>>();
@@ -810,7 +849,7 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn an_unfilled_four_page_budget_is_retryable_and_keeps_partial_cards() {
+	async fn an_unfilled_four_page_budget_exposes_its_safe_continuation() {
 		let mut accumulator = ListingAccumulator::new(ListingPolicy::test_default());
 		for index in 0..MAX_LISTING_REQUESTS {
 			let id = format!("partial{index}");
@@ -822,17 +861,25 @@ mod tests {
 			);
 		}
 		let result = accumulator.finish_budget();
-		assert_eq!(result.status, ListingStatus::Retry);
+		assert_eq!(result.status, ListingStatus::Complete);
 		assert_eq!(result.posts.len(), MAX_LISTING_REQUESTS);
 		assert_eq!(result.requests, MAX_LISTING_REQUESTS);
-		assert!(result.next_cursor.is_empty());
+		assert_eq!(result.next_cursor, "t3_partial3");
 	}
 
 	#[test]
-	fn upstream_cursor_removes_caller_state_and_enforces_twenty_five() {
+	fn upstream_batches_remove_caller_state_and_use_the_remaining_budget() {
 		assert_eq!(
-			upstream_cursor_path("/r/a/search.json?q=rust&before=t3_old&limit=999&seen_ids=a,b&target_count=1&raw_json=1", "t3_next"),
-			"/r/a/search.json?q=rust&raw_json=1&after=t3_next&limit=25"
+			upstream_batch_path(
+				"/r/a/search.json?q=rust&before=t3_old&limit=999&seen_ids=a,b&target_count=1&raw_json=1",
+				Some("t3_next"),
+				75,
+			),
+			"/r/a/search.json?q=rust&raw_json=1&after=t3_next&limit=75"
+		);
+		assert_eq!(
+			upstream_batch_path("/r/a/hot.json?before=t3_old&limit=25&raw_json=1", None, 100),
+			"/r/a/hot.json?before=t3_old&raw_json=1&limit=100"
 		);
 	}
 

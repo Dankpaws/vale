@@ -7,7 +7,7 @@
 {% endblock %}
 
 {% block search %}
-	{% call utils::search(["/r/", sub.as_str()].concat(), "") %}
+	{% if sub.is_empty() %}{% call utils::search("/".to_string(), "") %}{% else %}{% call utils::search(["/r/", sub.as_str()].concat(), "") %}{% endif %}
 {% endblock %}
 
 {% block subscriptions %}
@@ -15,15 +15,9 @@
 {% endblock %}
 
 {% block body %}
-	<main>
-		<div class="panel" id="column_one">
-			<div id="top">
-				<a href="/r/{{ sub }}">Posts</a>
-				<div>Wiki</div>
-			</div>
-			<div id="wiki">
-				{{ wiki|safe }}
-			</div>
-		</div>
-	</main>
+<main class="simple-page wiki-page">
+    <header class="page-hero"><span class="eyebrow">COMMUNITY WIKI</span><h1>{% if sub.is_empty() %}Wiki{% else %}r/{{ sub }}{% endif %}</h1><p>{{ page }}</p></header>
+    <nav class="search-scope" aria-label="Community pages"><a href="{% if sub.is_empty() %}/{% else %}/r/{{ sub }}{% endif %}">Posts</a><a href="{% if sub.is_empty() %}/wiki{% else %}/r/{{ sub }}/wiki{% endif %}" class="is-active" aria-current="page">Wiki</a></nav>
+    <div id="wiki">{{ wiki|safe }}</div>
+</main>
 {% endblock %}

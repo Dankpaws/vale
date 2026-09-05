@@ -202,12 +202,22 @@ fn open_database_at(path: &Path) -> Result<Connection, String> {
 		.busy_timeout(StdDuration::from_secs(5))
 		.map_err(|error| format!("Unable to configure the Vale profile database: {error}"))?;
 	connection
-		.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;")
+		.execute_batch("PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL;")
 		.map_err(|error| format!("Unable to configure the Vale profile database: {error}"))?;
 	Ok(connection)
 }
 
-fn initialize_schema(connection: &Connection) -> Result<(), String> {
+fn enable_wal(connection: &Connection) -> Result<(), String> {
+	let mode = connection
+		.query_row("PRAGMA journal_mode = WAL", [], |row| row.get::<_, String>(0))
+		.map_err(|error| format!("Unable to enable the Vale profile write-ahead log: {error}"))?;
+	if !mode.eq_ignore_ascii_case("wal") {
+		return Err(format!("Vale requested WAL mode but SQLite selected {mode}."));
+	}
+	Ok(())
+}
+
+pub(crate) fn initialize_schema(connection: &Connection) -> Result<(), String> {
 	connection
 		.execute_batch(
 			"CREATE TABLE IF NOT EXISTS users (
@@ -297,6 +307,16 @@ fn initialize_schema(connection: &Connection) -> Result<(), String> {
 		)
 		.map_err(|error| format!("Unable to migrate the Vale profile database: {error}"))?;
 	ensure_column(connection, "post_archives", "generated_asset_count", "INTEGER NOT NULL DEFAULT 0")?;
+	crate::reading_filters::initialize(connection).map_err(|e| e.to_string())?;
+	crate::reading::initialize(connection).map_err(|error| format!("Unable to initialize reading state: {error}"))?;
+	crate::watch::initialize(connection).map_err(|e| e.to_string())?;
+	crate::editions::initialize(connection).map_err(|e| e.to_string())?;
+	crate::library::initialize(connection).map_err(|e| e.to_string())?;
+	crate::offline::initialize(connection).map_err(|e| e.to_string())?;
+	crate::sources::initialize(connection).map_err(|e| e.to_string())?;
+	crate::stories::initialize(connection).map_err(|e| e.to_string())?;
+	crate::agenda::initialize(connection).map_err(|e| e.to_string())?;
+	crate::activity::initialize(connection).map_err(|error| format!("Unable to initialize Vale comment activity: {error}"))?;
 	Ok(())
 }
 
@@ -323,6 +343,7 @@ pub fn initialize() -> Result<(), String> {
 		return Ok(());
 	}
 	let connection = open_database()?;
+	enable_wal(&connection)?;
 	initialize_schema(&connection)?;
 	connection
 		.execute("DELETE FROM sessions WHERE expires_at <= ?1", params![now()])
@@ -478,6 +499,8 @@ fn is_public_asset(path: &str) -> bool {
 			| "/register-sw.js"
 			| "/vale-interactions.js"
 			| "/service-worker.js"
+			| "/offline.html"
+			| "/offline.js"
 			| "/healthz"
 	)
 }
@@ -834,7 +857,20 @@ pub(crate) fn hidden_post_ids_for_listing(request: &Request<Body>) -> Result<Has
 }
 
 pub fn post_is_hidden(request: &Request<Body>, post_id: &str) -> Result<bool, String> {
-	Ok(hidden_post_ids(request)?.contains(post_id))
+	let Some(context) = context(request) else {
+		return Ok(browser_hidden_post_ids(request).iter().any(|hidden| hidden == post_id));
+	};
+	post_is_hidden_in(&open_database()?, context.profile_id, post_id)
+}
+
+fn post_is_hidden_in(connection: &Connection, profile_id: i64, post_id: &str) -> Result<bool, String> {
+	connection
+		.query_row(
+			"SELECT EXISTS(SELECT 1 FROM hidden_posts WHERE profile_id = ?1 AND post_id = ?2)",
+			params![profile_id, post_id],
+			|row| row.get(0),
+		)
+		.map_err(|error| format!("Unable to inspect the hidden Vale post: {error}"))
 }
 
 /// Reconcile a restored/back-forward-cached listing against current profile
@@ -1781,17 +1817,19 @@ pub async fn history_clear_post(request: Request<Body>) -> Result<Response<Body>
 	let Some(profile_id) = context(&request).map(|context| context.profile_id) else {
 		return Ok(plain_response(StatusCode::UNAUTHORIZED, "Sign in is required."));
 	};
-	open_database()?
+	let mut connection = open_database()?;
+	let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|error| error.to_string())?;
+	transaction
 		.execute("DELETE FROM post_history WHERE profile_id = ?1", params![profile_id])
 		.map_err(|error| format!("Unable to clear Vale history: {error}"))?;
+	transaction
+		.execute("DELETE FROM post_activity WHERE profile_id = ?1", params![profile_id])
+		.map_err(|error| error.to_string())?;
+	transaction.commit().map_err(|error| error.to_string())?;
 	Ok(see_other("/history"))
 }
 
 pub async fn health() -> Result<Response<Body>, String> {
-	if mode() != ProfileMode::Browser {
-		let connection = open_database()?;
-		initialize_schema(&connection)?;
-	}
 	Ok(
 		Response::builder()
 			.status(StatusCode::OK)
@@ -1819,6 +1857,41 @@ mod tests {
 		let mut shm = path.as_os_str().to_os_string();
 		shm.push("-shm");
 		let _ = fs::remove_file(PathBuf::from(shm));
+	}
+
+	#[test]
+	fn wal_is_enabled_explicitly_once_while_connection_safety_stays_local() {
+		let path = temporary_database();
+		let connection = open_database_at(&path).unwrap();
+		let initial: String = connection.query_row("PRAGMA journal_mode", [], |row| row.get(0)).unwrap();
+		let foreign_keys: i64 = connection.query_row("PRAGMA foreign_keys", [], |row| row.get(0)).unwrap();
+		let synchronous: i64 = connection.query_row("PRAGMA synchronous", [], |row| row.get(0)).unwrap();
+		assert_eq!(initial, "delete");
+		assert_eq!(foreign_keys, 1);
+		assert_eq!(synchronous, 2);
+		enable_wal(&connection).unwrap();
+		let enabled: String = connection.query_row("PRAGMA journal_mode", [], |row| row.get(0)).unwrap();
+		assert_eq!(enabled, "wal");
+		drop(connection);
+		remove_database(&path);
+	}
+
+	#[test]
+	fn single_post_hidden_lookup_uses_the_profile_primary_key() {
+		let connection = Connection::open_in_memory().unwrap();
+		initialize_schema(&connection).unwrap();
+		connection
+			.execute(
+				"INSERT INTO profiles (id, label, preferences_json, created_at, updated_at) VALUES (7, 'Reader', '{}', 1, 1)",
+				[],
+			)
+			.unwrap();
+		connection
+			.execute("INSERT INTO hidden_posts (profile_id, post_id, hidden_at) VALUES (7, 'hidden', 1)", [])
+			.unwrap();
+		assert!(post_is_hidden_in(&connection, 7, "hidden").unwrap());
+		assert!(!post_is_hidden_in(&connection, 7, "visible").unwrap());
+		assert!(!post_is_hidden_in(&connection, 8, "hidden").unwrap());
 	}
 
 	#[test]
@@ -1989,6 +2062,27 @@ mod tests {
 			.header("host", host)
 			.body(Body::empty())
 			.unwrap()
+	}
+
+	#[test]
+	fn reading_forms_keep_twelve_origin_boundaries() {
+		for (origin, host, expected) in [
+			("http://127.0.0.1:3117", "127.0.0.1:3117", true),
+			("http://localhost:3117", "localhost:3117", true),
+			("http://127.0.0.1:3118", "127.0.0.1:3117", false),
+			("http://localhost:3117", "127.0.0.1:3117", false),
+			("https://evil.example", "127.0.0.1:3117", false),
+			("null", "127.0.0.1:3117", false),
+			("", "127.0.0.1:3117", false),
+			("file:///tmp/x", "127.0.0.1:3117", false),
+			("https://vale.example.com", "127.0.0.1:3117", true),
+			("https://vale.example.com.evil.test", "127.0.0.1:3117", false),
+			("https://vale.example.com:444", "127.0.0.1:3117", false),
+			("http://vale.example.com", "127.0.0.1:3117", false),
+		] {
+			let request = post_request(origin, host);
+			assert_eq!(mutation_is_same_origin_with_expected(&request, Some("https://vale.example.com")), expected, "{origin}");
+		}
 	}
 
 	#[test]
@@ -2400,4 +2494,70 @@ mod tests {
 		drop(connection);
 		remove_database(&path);
 	}
+}
+
+#[cfg(test)]
+mod surface_fixture_tests {
+	use super::*;
+	#[test]
+	fn account_surface_fixtures() {
+		for theme in ["dark", "light"] {
+			let history = HistoryTemplate {
+				prefs: crate::reading_fixtures::preferences(theme),
+				url: "/history".into(),
+				entries: vec![HistoryEntry {
+					title: "A small workshop, one good workbench".into(),
+					community: "woodworking".into(),
+					permalink: "/r/woodworking/comments/post0/discussion/".into(),
+					viewed: "Today".into(),
+					view_count: 2,
+				}],
+			}
+			.render()
+			.unwrap();
+			assert!(history.contains("Reading history"));
+			crate::reading_fixtures::export(theme, "history.html", &history);
+			let login = LoginTemplate {
+				prefs: crate::reading_fixtures::preferences(theme),
+				url: "/login".into(),
+				next: "/".into(),
+				error: String::new(),
+			}
+			.render()
+			.unwrap();
+			crate::reading_fixtures::export(theme, "login.html", &login);
+			let setup = SetupTemplate {
+				prefs: crate::reading_fixtures::preferences(theme),
+				url: "/setup".into(),
+				feed_groups: crate::reading_fixtures::feeds(),
+				subscription_count: 3,
+				error: String::new(),
+			}
+			.render()
+			.unwrap();
+			crate::reading_fixtures::export(theme, "setup.html", &setup);
+		}
+	}
+}
+
+#[cfg(test)]
+#[test]
+#[ignore = "Explicit local copied-state migration rehearsal; never targets live state"]
+fn copied_state_schema_rehearsal() {
+	let source = std::env::var_os("VALE_MIGRATION_FIXTURE").expect("Set VALE_MIGRATION_FIXTURE to a consistent, standalone database backup");
+	struct RehearsalDirectory(std::path::PathBuf);
+	impl Drop for RehearsalDirectory {
+		fn drop(&mut self) {
+			let _ = std::fs::remove_dir_all(&self.0);
+		}
+	}
+	let candidate = RehearsalDirectory(std::env::temp_dir().join(format!("vale-migration-{}", uuid::Uuid::new_v4())));
+	std::fs::create_dir(&candidate.0).unwrap();
+	let path = candidate.0.join("candidate.sqlite3");
+	std::fs::copy(source, &path).unwrap();
+	let db = Connection::open(path).unwrap();
+	initialize_schema(&db).unwrap();
+	initialize_schema(&db).unwrap();
+	assert_eq!(db.query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0)).unwrap(), "ok");
+	assert!(db.prepare("PRAGMA foreign_key_check").unwrap().query([]).unwrap().next().unwrap().is_none());
 }

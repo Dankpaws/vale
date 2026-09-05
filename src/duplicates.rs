@@ -76,7 +76,8 @@ pub async fn item(req: Request<Body>) -> Result<Response<Body>, String> {
 			}
 
 			let filters = get_filters(&req);
-			let (duplicates, num_posts_filtered, all_posts_filtered) = parse_duplicates(&response[1], &filters).await;
+			let (mut duplicates, num_posts_filtered, all_posts_filtered) = parse_duplicates(&response[1], &filters).await;
+			crate::activity::annotate(&req, &mut duplicates)?;
 
 			// These are the values for the "before=", "after=", and "sort="
 			// query params, respectively.
@@ -231,4 +232,36 @@ async fn parse_duplicates(json: &Value, filters: &HashSet<String>) -> (Vec<Post>
 
 	let (num_posts_filtered, all_posts_filtered) = filter_posts(&mut duplicates, filters);
 	(duplicates, num_posts_filtered, all_posts_filtered)
+}
+
+#[cfg(test)]
+mod surface_fixture_tests {
+	use super::*;
+	#[tokio::test]
+	async fn duplicates_surface_fixture() {
+		for theme in ["dark", "light"] {
+			let mut posts = crate::reading_fixtures::posts().await;
+			let mut post = posts.remove(0);
+			post.num_duplicates = posts.len() as u64;
+			let html = DuplicatesTemplate {
+				params: DuplicatesParams {
+					before: String::new(),
+					after: String::new(),
+					sort: "new".into(),
+				},
+				post,
+				duplicates: posts,
+				prefs: crate::reading_fixtures::preferences(theme),
+				url: "/duplicates/post0".into(),
+				num_posts_filtered: 0,
+				all_posts_filtered: false,
+			}
+			.render()
+			.unwrap();
+			assert!(html.contains("Other discussions"));
+			assert!(html.contains("data-inline-toggle"));
+			assert!(html.contains("listing-pagination"));
+			crate::reading_fixtures::export(theme, "duplicates.html", &html);
+		}
+	}
 }

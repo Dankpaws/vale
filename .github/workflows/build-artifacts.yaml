@@ -283,12 +283,26 @@ jobs:
           ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
         run: cp "$ATTESTATION_BUNDLE" "release-assets/vale-${GITHUB_REF_NAME}.sigstore.json"
 
+      - name: Extract the dated changelog for this release
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          version = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          changelog = Path("CHANGELOG.md").read_text()
+          heading = "## " + version + " - "
+          entries = [part for part in changelog.split("\n## ") if part.startswith(version + " - ")]
+          if len(entries) != 1:
+              raise SystemExit("Expected exactly one dated changelog entry for " + version)
+          Path("release-notes.md").write_text("## " + entries[0].strip() + "\n")
+          PY
+
       - name: Publish the immutable release assets
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           name: Vale ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
+          body_path: release-notes.md
           files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

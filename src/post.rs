@@ -1,3 +1,4 @@
+use crate::account;
 use crate::client::json;
 use crate::server::RequestExt;
 use crate::subreddit::{can_access_quarantine, quarantine};
@@ -11,6 +12,10 @@ use serde::Serialize;
 #[derive(Template)]
 #[template(path = "post.html")]
 struct PostTemplate {
+	reading: crate::reading::ReadingEntry,
+	reading_enabled: bool,
+	sources: Vec<crate::sources::SourceItem>,
+	activity: crate::activity::Visit,
 	comments: Vec<ThreadGroup>,
 	post: Post,
 	sort: String,
@@ -69,7 +74,7 @@ const MAX_COMMENT_SEARCH_CHARS: usize = 160;
 fn forwarded_item_query(query: &str) -> String {
 	let mut serializer = url::form_urlencoded::Serializer::new(String::new());
 	for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
-		if !matches!(key.as_ref(), "thread_patch" | "continuation" | "raw_json" | "q" | "type") {
+		if !matches!(key.as_ref(), "resume" | "thread_patch" | "continuation" | "raw_json" | "q" | "type" | "activity_visit") {
 			serializer.append_pair(&key, &value);
 		}
 	}
@@ -182,6 +187,31 @@ fn thread_patch_response(
 	)
 }
 
+fn listing_has_comment(listing: &serde_json::Value, id: &str) -> bool {
+	listing["data"]["children"].as_array().is_some_and(|children| {
+		children
+			.iter()
+			.any(|c| c["kind"] == "t1" && (c["data"]["id"].as_str() == Some(id) || listing_has_comment(&c["data"]["replies"], id)))
+	})
+}
+fn merge_resume_listing(listing: &mut serde_json::Value, saved: &serde_json::Value) {
+	let Some(incoming) = saved["data"]["children"].as_array() else { return };
+	if listing["data"]["children"].as_array().is_none() {
+		*listing = serde_json::json!({"kind":"Listing","data":{"children":[]}});
+	}
+	let children = listing["data"]["children"].as_array_mut().unwrap();
+	for node in incoming.iter().filter(|n| n["kind"] == "t1").take(500) {
+		let Some(id) = node["data"]["id"].as_str().filter(|id| account::valid_post_id(id)) else {
+			continue;
+		};
+		if let Some(existing) = children.iter_mut().find(|n| n["kind"] == "t1" && n["data"]["id"].as_str() == Some(id)) {
+			merge_resume_listing(&mut existing["data"]["replies"], &node["data"]["replies"]);
+		} else {
+			children.push(node.clone());
+		}
+	}
+}
+
 pub async fn item(req: Request<Body>) -> Result<Response<Body>, String> {
 	// Build Reddit API path
 	let thread_patch = item_query_param(req.uri().query().unwrap_or_default(), "thread_patch").as_deref() == Some("1");
@@ -217,9 +247,9 @@ pub async fn item(req: Request<Body>) -> Result<Response<Body>, String> {
 	// Send a request to the url, receive JSON in response
 	match json(path, quarantined).await {
 		// Otherwise, grab the JSON output from the request
-		Ok(response) => {
+		Ok(mut response) => {
 			// Parse the JSON into Post and Comment structs
-			let post = parse_post(&response[0]["data"]["children"][0]).await;
+			let mut post = parse_post(&response[0]["data"]["children"][0]).await;
 
 			let req_url = req.uri().to_string();
 			// Return landing page if this post if this Reddit deems this post
@@ -230,6 +260,31 @@ pub async fn item(req: Request<Body>) -> Result<Response<Body>, String> {
 			}
 			if !thread_patch {
 				crate::account::record_post_view(&req, &post)?;
+			}
+
+			let reading = if let Some(context) = account::context(&req) {
+				crate::reading::get(&account::open_database()?, context.profile_id, &post.id).map_err(|e| format!("{e:?}"))?
+			} else {
+				Default::default()
+			};
+			// Fetch only the saved path when it is outside the initial full-thread batch.
+			if !single_thread
+				&& !thread_patch
+				&& item_query_param(req.uri().query().unwrap_or_default(), "resume").as_deref() == Some("1")
+				&& account::valid_post_id(&reading.anchor)
+				&& !listing_has_comment(&response[1], &reading.anchor)
+			{
+				let saved_path = format!(
+					"/comments/{}/comments/{}.json?context=100&limit=500&sort={}&raw_json=1",
+					post.id,
+					reading.anchor,
+					reading.resume_state().sort
+				);
+				if let Ok(Ok(saved)) = tokio::time::timeout(std::time::Duration::from_secs(20), json(saved_path, quarantined)).await {
+					if saved[0]["data"]["children"][0]["data"]["id"].as_str() == Some(post.id.as_str()) {
+						merge_resume_listing(&mut response[1], &saved[1]);
+					}
+				}
 			}
 
 			let thread = ThreadModel::from_listing(
@@ -243,24 +298,42 @@ pub async fn item(req: Request<Body>) -> Result<Response<Body>, String> {
 				&comment_keywords,
 				&prefs,
 			);
+			crate::watch::observe_request(&req, &post.id, &thread)?;
 			let thread_summary = thread.summary();
 			let filtered_comment_count = thread.filtered_comment_count();
 			let thread_search = thread.search(&query);
-			let comments = thread.into_search_projection(&thread_search);
+			let mut comments = thread.into_search_projection(&thread_search);
+			let archive = if thread_patch { None } else { crate::archive::archive_for_post(&req, &post.id)? };
+			let post_hidden = !thread_patch && crate::account::post_is_hidden(&req, &post.id)?;
+			let activity = crate::activity::for_post(&req, &post, thread_patch)?;
+			activity.highlight(&mut comments);
+			post.new_comments = activity.new_comments;
 			if thread_patch {
 				if !single_thread {
 					return Ok(thread_patch_error(StatusCode::BAD_REQUEST, "A continuation patch requires a parent comment."));
 				}
 				return thread_patch_response(&post.id, highlighted_comment, &continuation_id, &sort, thread_summary, thread_search, &comments);
 			}
-			let archive = crate::archive::archive_for_post(&req, &post.id)?;
-			let post_hidden = crate::account::post_is_hidden(&req, &post.id)?;
+			let mut sources = Vec::new();
+			if let (Some(context), Some(out)) = (account::context(&req), post.out_url.as_deref()) {
+				let db = account::open_database()?;
+				for feed in prefs.feed_groups().iter().filter(|f| f.communities.iter().any(|c| c.eq_ignore_ascii_case(&post.community))) {
+					sources.extend(crate::sources::matching_entries(&db, context.profile_id, &feed.slug, out).map_err(|e| format!("{e:?}"))?);
+				}
+				sources.sort_by_key(|i| i.id);
+				sources.dedup_by_key(|i| i.id);
+			}
+			let url_without_query = activity.url(&item_url_without_comment_search(req.uri().path(), req.uri().query().unwrap_or_default()));
 
 			// Use the Post and Comment structs to generate a website to show users
 			Ok(template(&PostTemplate {
+				reading,
+				reading_enabled: crate::account::context(&req).is_some(),
+				sources,
+				activity,
 				comments,
 				post,
-				url_without_query: item_url_without_comment_search(req.uri().path(), req.uri().query().unwrap_or_default()),
+				url_without_query,
 				sort,
 				prefs,
 				single_thread,
@@ -295,7 +368,47 @@ mod tests {
 	use std::collections::HashSet;
 
 	#[test]
+	fn resume_merge_twelve_edges() {
+		fn listing(nodes: Vec<serde_json::Value>) -> serde_json::Value {
+			json!({"kind":"Listing","data":{"children":nodes}})
+		}
+		fn c(id: &str, replies: serde_json::Value) -> serde_json::Value {
+			json!({"kind":"t1","data":{"id":id,"replies":replies}})
+		}
+		for case in 0..12 {
+			let mut base = listing(vec![c("root", listing(vec![c("first", json!(""))])), c("sibling", json!(""))]);
+			let mut extra = listing(vec![c("root", listing(vec![c("target", json!(""))]))]);
+			match case {
+				1 => extra = listing(vec![]),
+				2 => extra = json!(null),
+				3 => extra = listing(vec![json!({"kind":"more","data":{"id":"target"}})]),
+				4 => extra = listing(vec![c("newroot", listing(vec![c("target", json!(""))]))]),
+				5 => extra = listing(vec![c("root", listing(vec![c("first", listing(vec![c("target", json!(""))]))]))]),
+				6 => base = json!(""),
+				7 => extra = listing(vec![c("bad/id", json!(""))]),
+				8 => extra = listing(vec![c("root", listing(vec![c("target", json!("")), c("target", json!(""))]))]),
+				9 => extra = listing(vec![c("root", json!(""))]),
+				10 => extra = listing(vec![c("root", listing(vec![c("target", json!(""))])), c("sibling", json!(""))]),
+				11 => {
+					assert_eq!(forwarded_item_query("resume=1&sort=old"), "sort=old&raw_json=1");
+				}
+				_ => {}
+			}
+			merge_resume_listing(&mut base, &extra);
+			let once = base.clone();
+			merge_resume_listing(&mut base, &extra);
+			assert_eq!(base, once, "idempotent case {case}");
+			assert_eq!(listing_has_comment(&base, "target"), ![1, 2, 3, 7, 9].contains(&case), "case {case}");
+			if case != 6 {
+				assert!(listing_has_comment(&base, "first"));
+				assert!(listing_has_comment(&base, "sibling"));
+			}
+		}
+	}
+
+	#[test]
 	fn thread_patch_state_never_reaches_reddit() {
+		assert_eq!(forwarded_item_query("sort=new&activity_visit=private-local-state"), "sort=new&raw_json=1");
 		assert_eq!(
 			forwarded_item_query("sort=top&q=needle&type=comment&thread_patch=1&continuation=more_0123456789abcdef01234567&raw_json=0&context=3"),
 			"sort=top&context=3&raw_json=1"
@@ -378,5 +491,59 @@ mod tests {
 		assert!(payload["nodes"][0]["html"].as_str().unwrap().contains("data-thread-node-id=\"t1_child\""));
 		assert_eq!(payload["search"]["matchIds"][0], "t1_child");
 		assert!(payload["nodes"][0]["html"].as_str().unwrap().contains("data-comment-search-match=\"true\""));
+	}
+}
+
+#[cfg(test)]
+mod reading_fixture_tests {
+	use super::*;
+	#[tokio::test]
+	async fn reading_discussion_fixture() {
+		for theme in ["dark", "light"] {
+			let prefs = crate::reading_fixtures::preferences(theme);
+			let post = crate::reading_fixtures::posts().await.remove(0);
+			let model = ThreadModel::from_listing(
+				&crate::reading_fixtures::comments(),
+				"post0",
+				20,
+				&post.permalink,
+				"field_reader",
+				"",
+				&std::collections::HashSet::new(),
+				&[],
+				&prefs,
+			);
+			let summary = model.summary();
+			let search = model.search("");
+			let html = PostTemplate {
+				reading: Default::default(),
+				reading_enabled: false,
+				sources: vec![],
+				activity: crate::activity::Visit::default(),
+				comments: model.into_search_projection(&search),
+				url: post.permalink.clone(),
+				url_without_query: post.permalink.clone(),
+				post,
+				sort: "confidence".into(),
+				prefs,
+				single_thread: false,
+				comment_query: String::new(),
+				filtered_comment_count: 0,
+				thread_summary: summary,
+				thread_search: search,
+				archive_id: String::new(),
+				archive_status: String::new(),
+				archive_status_label: String::new(),
+				post_hidden: false,
+			}
+			.render()
+			.unwrap();
+			assert!(html.contains("data-thread-depth=\"8\""));
+			assert!(html.contains("Show 8 replies"));
+			assert!(html.contains("class=\"disclosure-chevron\""));
+			assert!(!html.contains("class=\"sr-only\" data-replies-label"));
+			assert!(html.contains("Best</option>") || html.contains("Best\n"));
+			crate::reading_fixtures::export(theme, "discussion.html", &html);
+		}
 	}
 }

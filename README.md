@@ -20,6 +20,15 @@ an instance reachable by anyone else.
 > boundary before binding it to a non-loopback address. Never expose a fresh
 > HTTP listener directly to the public internet.
 
+## What is new in 0.37.0
+
+The Reading workspace brings full-discussion checkpoints, persistent comment
+navigation, finite feed editions, followed replies, filters, saved-comment notes,
+encrypted device offline packs, RSS/Atom sources, and reader-curated Stories.
+It also includes a refined reading layout and a week of loading, caching, and
+background-work improvements. Read the [changelog](CHANGELOG.md#0370---2026-09-04)
+and [Reading guide](docs/USAGE.md#reading) for details and practical limits.
+
 ## Choose an installation path
 
 The detailed, copy-paste instructions are in [Installation](docs/INSTALL.md).
@@ -44,7 +53,7 @@ installs the systemd unit, and waits for the health check:
 ```sh
 git clone https://github.com/Dankpaws/vale.git
 cd vale
-git checkout v0.36.1
+git checkout v0.37.0
 sudo ./install.sh
 ```
 

@@ -23,14 +23,14 @@ use std::{
 	path::{Component, Path, PathBuf},
 	sync::{
 		atomic::{AtomicUsize, Ordering},
+		mpsc::{sync_channel, Receiver, SyncSender, TrySendError},
 		LazyLock,
 	},
 };
 use tokio::{
 	fs,
-	io::{AsyncReadExt, AsyncWriteExt},
+	io::AsyncWriteExt,
 	net::lookup_host,
-	sync::Semaphore,
 	time::{timeout, Duration},
 };
 use url::Url;
@@ -65,6 +65,8 @@ const MIN_CAPTURE_RESERVATION_BYTES: u64 = 64 * MIB;
 const FINALIZATION_RESERVE_BYTES: u64 = 64 * MIB;
 const DEFAULT_ITEM_QUOTA_BYTES: u64 = 1024 * 1024 * 1024;
 const DEFAULT_TOTAL_QUOTA_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+#[cfg(target_os = "linux")]
+const ARCHIVE_WORKER_NICE: i32 = 10;
 pub const ARCHIVE_CSP: &str = "default-src 'none'; script-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'none'; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; form-action 'none'; base-uri 'none'";
 const READER_SUPPORT_ASSETS: [(&str, &str, &[u8]); 5] = [
 	(
@@ -82,8 +84,8 @@ const READER_SUPPORT_ASSETS: [(&str, &str, &[u8]); 5] = [
 	("files/reader/AGPL-3.0.txt", "text/plain; charset=utf-8", include_bytes!("../LICENSE")),
 ];
 
-static ARCHIVE_SLOT: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(1));
 static PENDING_ARCHIVES: AtomicUsize = AtomicUsize::new(0);
+static ARCHIVE_WORKER: LazyLock<Result<SyncSender<QueuedArchiveJob>, String>> = LazyLock::new(start_archive_worker);
 static HTML_MEDIA_URL: LazyLock<Regex> =
 	LazyLock::new(|| Regex::new(r#"(?i)\b(?:src|poster|href)\s*=\s*["'](?P<url>/[A-Za-z0-9._~!$&'()*+,;=:@%/?#-]+)["']"#).expect("archive media URL regex is valid"));
 static PAGE_RESOURCE_URL: LazyLock<Regex> =
@@ -214,6 +216,13 @@ fn render_archive_reader(manifest: &ArchiveManifest) -> Result<String, String> {
 	.map_err(|error| format!("Unable to render the standalone saved-post reader: {error}"))
 }
 
+fn build_archive_documents(manifest: ArchiveManifest) -> Result<(ArchiveManifest, Vec<u8>, String, String), String> {
+	let manifest_json = serde_json::to_vec_pretty(&manifest).map_err(|error| format!("Unable to serialize the saved-post manifest: {error}"))?;
+	let index = render_archive_reader(&manifest)?;
+	let issues_json = serde_json::to_string(&manifest.issues).map_err(|error| format!("Unable to serialize the capture report: {error}"))?;
+	Ok((manifest, manifest_json, index, issues_json))
+}
+
 #[derive(Clone, Debug)]
 pub struct ArchiveEntryView {
 	pub id: String,
@@ -241,7 +250,7 @@ impl ArchiveEntryView {
 		matches!(self.status.as_str(), "queued" | "capturing")
 	}
 
-	fn is_viewable(&self) -> bool {
+	pub(crate) fn is_viewable(&self) -> bool {
 		matches!(self.status.as_str(), "ready" | "partial")
 	}
 }
@@ -869,15 +878,19 @@ pub async fn save_post(request: Request<Body>) -> Result<Response<Body>, String>
 		ArchiveAdmission::Existing { id } => Ok(see_other(&format!("/saved/{id}"))),
 		ArchiveAdmission::Admitted { id, reservation_bytes, pruned } => {
 			remove_pruned_archive_files(profile_id, &pruned).await;
-			spawn_job(
-				ArchiveJob {
-					id: id.clone(),
-					profile_id,
-					post_id,
-					reservation_bytes,
-				},
-				reservation,
-			);
+			let job = ArchiveJob {
+				id: id.clone(),
+				profile_id,
+				post_id,
+				reservation_bytes,
+			};
+			if let Err(message) = spawn_job(job.clone(), reservation) {
+				fail_job_after_cleanup(&job, &message).await;
+				return Ok(plain_response(
+					StatusCode::SERVICE_UNAVAILABLE,
+					"The local archive worker is unavailable. Retry this capture.",
+				));
+			}
 			Ok(see_other(&format!("/saved/{id}")))
 		}
 	}
@@ -940,6 +953,7 @@ pub fn resume_pending() -> Result<(), String> {
 	}
 	let root = archive_root();
 	std::fs::create_dir_all(&root).map_err(|error| format!("Unable to create the Vale archive directory: {error}"))?;
+	archive_worker_sender()?;
 	let mut connection = account::open_database()?;
 	reconcile_database_archives(&mut connection, &root)?;
 	reconcile_orphan_archives(&mut connection, &root)?;
@@ -991,7 +1005,7 @@ pub fn resume_pending() -> Result<(), String> {
 	drop(connection);
 	for job in jobs {
 		if let Some(reservation) = reserve_archive_job() {
-			spawn_job(job, reservation);
+			spawn_job(job, reservation)?;
 		} else {
 			return Err("The recovered archive queue exceeded its in-memory concurrency boundary.".to_string());
 		}
@@ -1344,17 +1358,90 @@ fn reserve_archive_job() -> Option<ArchiveReservation> {
 	try_reserve_pending(&PENDING_ARCHIVES).then_some(ArchiveReservation)
 }
 
-fn spawn_job(job: ArchiveJob, reservation: ArchiveReservation) {
-	tokio::spawn(async move {
-		let _reservation = reservation;
-		let Ok(_permit) = ARCHIVE_SLOT.acquire().await else {
-			fail_job_after_cleanup(&job, "The local archive worker stopped before this capture began.").await;
+struct QueuedArchiveJob {
+	job: ArchiveJob,
+	reservation: ArchiveReservation,
+}
+
+#[cfg(target_os = "linux")]
+fn lower_archive_worker_priority() -> Result<(), String> {
+	const PRIO_PROCESS: i32 = 0;
+
+	unsafe extern "C" {
+		fn getpriority(which: i32, who: u32) -> i32;
+		fn setpriority(which: i32, who: u32, priority: i32) -> i32;
+	}
+
+	// Linux schedules each native thread independently for PRIO_PROCESS. The
+	// dedicated runtime's blocking thread inherits this value when it starts.
+	let current = unsafe { getpriority(PRIO_PROCESS, 0) };
+	if current >= ARCHIVE_WORKER_NICE {
+		return Ok(());
+	}
+	if unsafe { setpriority(PRIO_PROCESS, 0, ARCHIVE_WORKER_NICE) } == 0 {
+		Ok(())
+	} else {
+		Err(format!("Unable to lower the archive worker's CPU priority: {}", io::Error::last_os_error()))
+	}
+}
+
+#[cfg(not(target_os = "linux"))]
+fn lower_archive_worker_priority() -> Result<(), String> {
+	Ok(())
+}
+
+fn archive_worker_loop(receiver: Receiver<QueuedArchiveJob>, ready: SyncSender<Result<(), String>>) {
+	if let Err(message) = lower_archive_worker_priority() {
+		let _ = ready.send(Err(message));
+		return;
+	}
+	let runtime = match tokio::runtime::Builder::new_current_thread()
+		.enable_all()
+		.max_blocking_threads(1)
+		.thread_name("vale-archive-blocking")
+		.build()
+	{
+		Ok(runtime) => runtime,
+		Err(error) => {
+			let _ = ready.send(Err(format!("Unable to start the isolated archive runtime: {error}")));
 			return;
-		};
-		if let Err(message) = run_job(&job).await {
-			fail_job_after_cleanup(&job, &message).await;
 		}
-	});
+	};
+	if ready.send(Ok(())).is_err() {
+		return;
+	}
+	while let Ok(queued) = receiver.recv() {
+		let _reservation = queued.reservation;
+		runtime.block_on(async {
+			if let Err(message) = run_job(&queued.job).await {
+				fail_job_after_cleanup(&queued.job, &message).await;
+			}
+		});
+	}
+}
+
+fn start_archive_worker() -> Result<SyncSender<QueuedArchiveJob>, String> {
+	let (sender, receiver) = sync_channel(MAX_PENDING_ARCHIVES);
+	let (ready_sender, ready_receiver) = sync_channel(1);
+	std::thread::Builder::new()
+		.name("vale-archive".to_string())
+		.spawn(move || archive_worker_loop(receiver, ready_sender))
+		.map_err(|error| format!("Unable to start the isolated archive worker: {error}"))?;
+	ready_receiver.recv().map_err(|_| "The isolated archive worker stopped during startup.".to_string())??;
+	Ok(sender)
+}
+
+fn archive_worker_sender() -> Result<&'static SyncSender<QueuedArchiveJob>, String> {
+	ARCHIVE_WORKER.as_ref().map_err(Clone::clone)
+}
+
+fn spawn_job(job: ArchiveJob, reservation: ArchiveReservation) -> Result<(), String> {
+	let queued = QueuedArchiveJob { job, reservation };
+	match archive_worker_sender()?.try_send(queued) {
+		Ok(()) => Ok(()),
+		Err(TrySendError::Full(_)) => Err("The isolated archive queue reached its concurrency boundary.".to_string()),
+		Err(TrySendError::Disconnected(_)) => Err("The isolated archive worker stopped before this capture began.".to_string()),
+	}
 }
 
 fn bounded_error(message: &str) -> String {
@@ -1774,17 +1861,24 @@ fn is_local_media_path(source: &str) -> bool {
 }
 
 async fn sha256_file(path: &Path) -> Result<String, String> {
-	let mut file = fs::File::open(path).await.map_err(|error| format!("Unable to checksum an archived file: {error}"))?;
-	let mut digest = Sha256::new();
-	let mut buffer = vec![0_u8; 128 * 1024];
-	loop {
-		let read = file.read(&mut buffer).await.map_err(|error| format!("Unable to checksum an archived file: {error}"))?;
-		if read == 0 {
-			break;
+	let path = path.to_path_buf();
+	tokio::task::spawn_blocking(move || {
+		use std::io::Read as _;
+
+		let mut file = std::fs::File::open(path).map_err(|error| format!("Unable to checksum an archived file: {error}"))?;
+		let mut digest = Sha256::new();
+		let mut buffer = vec![0_u8; 128 * 1024];
+		loop {
+			let read = file.read(&mut buffer).map_err(|error| format!("Unable to checksum an archived file: {error}"))?;
+			if read == 0 {
+				break;
+			}
+			digest.update(&buffer[..read]);
 		}
-		digest.update(&buffer[..read]);
-	}
-	Ok(format!("{:x}", digest.finalize()))
+		Ok(format!("{:x}", digest.finalize()))
+	})
+	.await
+	.map_err(|_| "The archive checksum task stopped unexpectedly.".to_string())?
 }
 
 impl CaptureContext {
@@ -2071,10 +2165,17 @@ async fn run_job(job: &ArchiveJob) -> Result<(), String> {
 		_ => {}
 	}
 
-	let mut post_body = parsed.body.clone();
-	let mut inline_sources = HashSet::new();
-	html_media_sources(&post_body, &mut inline_sources);
-	comment_media_sources(&captured_comments.comments, &mut inline_sources);
+	let post_body = parsed.body.clone();
+	let comments = std::mem::take(&mut captured_comments.comments);
+	let (mut post_body, comments, inline_sources) = tokio::task::spawn_blocking(move || {
+		let mut inline_sources = HashSet::new();
+		html_media_sources(&post_body, &mut inline_sources);
+		comment_media_sources(&comments, &mut inline_sources);
+		(post_body, comments, inline_sources)
+	})
+	.await
+	.map_err(|_| "The archive media scan stopped unexpectedly.".to_string())?;
+	captured_comments.comments = comments;
 	if inline_sources.len() > MAX_INLINE_MEDIA {
 		context.push_issue(
 			"embedded media",
@@ -2086,8 +2187,18 @@ async fn run_job(job: &ArchiveJob) -> Result<(), String> {
 			context.push_issue("embedded media", format!("An embedded Reddit asset could not be stored ({source}): {message}"));
 		}
 	}
-	post_body = rewrite_archived_html(&post_body, &context.asset_paths);
-	rewrite_comment_assets(&mut captured_comments.comments, &context.asset_paths);
+	let asset_paths = context.asset_paths.clone();
+	let comments = std::mem::take(&mut captured_comments.comments);
+	let (rewritten_body, rewritten_comments) = tokio::task::spawn_blocking(move || {
+		let rewritten_body = rewrite_archived_html(&post_body, &asset_paths);
+		let mut rewritten_comments = comments;
+		rewrite_comment_assets(&mut rewritten_comments, &asset_paths);
+		(rewritten_body, rewritten_comments)
+	})
+	.await
+	.map_err(|_| "The archive HTML rewriting task stopped unexpectedly.".to_string())?;
+	post_body = rewritten_body;
+	captured_comments.comments = rewritten_comments;
 
 	let source_url = parsed.out_url.clone().unwrap_or_default();
 	let source_snapshot = if source_url.is_empty() || !matches!(parsed.post_type.as_str(), "link" | "image") {
@@ -2142,9 +2253,10 @@ async fn run_job(job: &ArchiveJob) -> Result<(), String> {
 		initial_reddit_json: initial,
 		additional_comment_things: captured_comments.things,
 	};
-	let manifest_json = serde_json::to_vec_pretty(&manifest).map_err(|error| format!("Unable to serialize the saved-post manifest: {error}"))?;
+	let (manifest, manifest_json, index, issues_json) = tokio::task::spawn_blocking(move || build_archive_documents(manifest))
+		.await
+		.map_err(|_| "The archive document rendering task stopped unexpectedly.".to_string())??;
 	context.write_generated("manifest.json", &manifest_json).await?;
-	let index = render_archive_reader(&manifest)?;
 	context.write_generated("index.html", index.as_bytes()).await?;
 	sync_directory(&partial).await?;
 	let usage_path = partial.clone();
@@ -2166,7 +2278,6 @@ async fn run_job(job: &ArchiveJob) -> Result<(), String> {
 	}
 
 	let status = if manifest.issues.is_empty() { "ready" } else { "partial" };
-	let issues_json = serde_json::to_string(&manifest.issues).map_err(|error| format!("Unable to serialize the capture report: {error}"))?;
 	let mut connection = account::open_database()?;
 	let transaction = connection
 		.transaction_with_behavior(TransactionBehavior::Immediate)
@@ -2380,7 +2491,7 @@ async fn public_addresses(url: &Url) -> Result<Vec<SocketAddr>, String> {
 	Ok(addresses)
 }
 
-async fn public_response(source: &str) -> Result<(Url, wreq::Response), String> {
+pub(crate) async fn public_response(source: &str) -> Result<(Url, wreq::Response), String> {
 	let mut current = Url::parse(source).map_err(|_| "The source page address is invalid.".to_string())?;
 	for _ in 0..=MAX_EXTERNAL_REDIRECTS {
 		let host = current.host_str().ok_or_else(|| "The source page has no host.".to_string())?.to_string();
@@ -2449,8 +2560,56 @@ async fn response_bytes(response: wreq::Response, maximum: u64) -> Result<(Strin
 	Ok((content_type, bytes))
 }
 
+fn prepare_external_html(bytes: Vec<u8>) -> (String, Vec<String>, String) {
+	let sha256 = format!("{:x}", Sha256::digest(&bytes));
+	let mut html = String::from_utf8_lossy(&bytes).into_owned();
+	html = ACTIVE_HTML.replace_all(&html, "").into_owned();
+	html = REFRESH_META.replace_all(&html, "").into_owned();
+	html = BASE_ELEMENT.replace_all(&html, "").into_owned();
+	html = EVENT_ATTRIBUTE.replace_all(&html, "").into_owned();
+	html = JAVASCRIPT_URL.replace_all(&html, "$1=\"#\"").into_owned();
+	let resources = PAGE_RESOURCE_URL
+		.captures_iter(&html)
+		.filter_map(|captures| {
+			let attribute = captures.name("attribute")?.as_str().to_ascii_lowercase();
+			let raw = captures.name("url")?.as_str().to_string();
+			if raw.starts_with("data:") || raw.starts_with("blob:") || raw.starts_with('#') {
+				return None;
+			}
+			let likely_stylesheet = raw.split('?').next().is_some_and(|path| path.to_ascii_lowercase().ends_with(".css"));
+			(attribute != "href" || likely_stylesheet).then_some(raw)
+		})
+		.collect::<HashSet<_>>()
+		.into_iter()
+		.take(MAX_EXTERNAL_REQUISITES + 1)
+		.collect();
+	(html, resources, sha256)
+}
+
+fn finish_external_html(mut html: String, final_url: &str, raw_path: &str) -> (String, String) {
+	let policy = format!("<meta http-equiv=\"Content-Security-Policy\" content=\"{ARCHIVE_CSP}\"><meta name=\"referrer\" content=\"no-referrer\">");
+	if let Some(index) = html.to_ascii_lowercase().find("<head>") {
+		html.insert_str(index + "<head>".len(), &policy);
+	} else {
+		html = format!("<!doctype html><html><head>{policy}</head><body>{html}</body></html>");
+	}
+	let provenance = format!(
+		"<aside style=\"padding:12px;background:#111;color:#ddd;font:14px system-ui\">Locally captured by Vale from <a style=\"color:#7adac8\" href=\"{}\">{}</a>. Active content was removed. <a style=\"color:#7adac8\" href=\"../../{}\">Original response</a>.</aside>",
+		htmlescape::encode_attribute(final_url),
+		htmlescape::encode_minimal(final_url),
+		raw_path
+	);
+	if let Some(index) = html.to_ascii_lowercase().find("<body") {
+		if let Some(close) = html[index..].find('>') {
+			html.insert_str(index + close + 1, &provenance);
+		}
+	}
+	let sha256 = format!("{:x}", Sha256::digest(html.as_bytes()));
+	(html, sha256)
+}
+
 impl CaptureContext {
-	async fn store_bytes_asset(&mut self, source_key: &str, original_url: &str, content_type: &str, bytes: &[u8]) -> Result<String, String> {
+	async fn store_bytes_asset(&mut self, source_key: &str, original_url: &str, content_type: &str, bytes: Vec<u8>) -> Result<String, String> {
 		if let Some(path) = self.asset_paths.get(source_key).or_else(|| self.asset_paths.get(original_url)).cloned() {
 			self.asset_paths.insert(source_key.to_string(), path.clone());
 			return Ok(path);
@@ -2470,10 +2629,12 @@ impl CaptureContext {
 		let mut file = fs::File::create(&destination)
 			.await
 			.map_err(|error| format!("Unable to create an archived source file: {error}"))?;
-		file.write_all(bytes).await.map_err(|error| format!("Unable to write an archived source file: {error}"))?;
+		file.write_all(&bytes).await.map_err(|error| format!("Unable to write an archived source file: {error}"))?;
 		file.sync_all().await.map_err(|error| format!("Unable to make an archived source file durable: {error}"))?;
-		let sha256 = format!("{:x}", Sha256::digest(bytes));
 		let length = bytes.len() as u64;
+		let sha256 = tokio::task::spawn_blocking(move || format!("{:x}", Sha256::digest(bytes)))
+			.await
+			.map_err(|_| "The archive checksum task stopped unexpectedly.".to_string())?;
 		self.total_bytes = self.total_bytes.saturating_add(length);
 		self.assets.push(ArchiveAsset {
 			path: relative.clone(),
@@ -2526,44 +2687,26 @@ impl CaptureContext {
 		let (content_type, bytes) = response_bytes(response, maximum).await?;
 		let media_type = content_type.split(';').next().unwrap_or_default().trim().to_ascii_lowercase();
 		if media_type != "text/html" && media_type != "application/xhtml+xml" {
-			return self.store_bytes_asset(source, final_url.as_str(), &content_type, &bytes).await;
+			return self.store_bytes_asset(source, final_url.as_str(), &content_type, bytes).await;
 		}
 
 		let raw_path = "files/source/original-response.bin".to_string();
 		self.write_generated(&raw_path, &bytes).await?;
+		let raw_bytes = bytes.len() as u64;
+		let (mut html, resources, raw_sha256) = tokio::task::spawn_blocking(move || prepare_external_html(bytes))
+			.await
+			.map_err(|_| "The source-page sanitizing task stopped unexpectedly.".to_string())?;
 		self.assets.push(ArchiveAsset {
 			path: raw_path.clone(),
 			original_url: final_url.to_string(),
 			content_type: "application/octet-stream".to_string(),
-			bytes: bytes.len() as u64,
-			sha256: format!("{:x}", Sha256::digest(&bytes)),
+			bytes: raw_bytes,
+			sha256: raw_sha256,
 		});
 		self.push_issue(
 			"source page",
 			"The linked HTML page was preserved as a sanitized, best-effort snapshot. Active code and resources discoverable only after script execution were deliberately not stored.",
 		);
-		let mut html = String::from_utf8_lossy(&bytes).into_owned();
-		html = ACTIVE_HTML.replace_all(&html, "").into_owned();
-		html = REFRESH_META.replace_all(&html, "").into_owned();
-		html = BASE_ELEMENT.replace_all(&html, "").into_owned();
-		html = EVENT_ATTRIBUTE.replace_all(&html, "").into_owned();
-		html = JAVASCRIPT_URL.replace_all(&html, "$1=\"#\"").into_owned();
-
-		let resources = PAGE_RESOURCE_URL
-			.captures_iter(&html)
-			.filter_map(|captures| {
-				let attribute = captures.name("attribute")?.as_str().to_ascii_lowercase();
-				let raw = captures.name("url")?.as_str().to_string();
-				if raw.starts_with("data:") || raw.starts_with("blob:") || raw.starts_with('#') {
-					return None;
-				}
-				let likely_stylesheet = raw.split('?').next().is_some_and(|path| path.to_ascii_lowercase().ends_with(".css"));
-				(attribute != "href" || likely_stylesheet).then_some(raw)
-			})
-			.collect::<HashSet<_>>()
-			.into_iter()
-			.take(MAX_EXTERNAL_REQUISITES + 1)
-			.collect::<Vec<_>>();
 		let sanitized_document_reserve = (html.len() as u64).saturating_add(128 * 1024);
 		if resources.len() > MAX_EXTERNAL_REQUISITES {
 			self.push_issue(
@@ -2598,28 +2741,18 @@ impl CaptureContext {
 			match result {
 				Ok(path) => {
 					let source_relative = path.strip_prefix("files/").map(|path| format!("../{path}")).unwrap_or(path);
-					html = html.replace(&raw, &source_relative);
+					html = tokio::task::spawn_blocking(move || html.replace(&raw, &source_relative))
+						.await
+						.map_err(|_| "The source-page rewriting task stopped unexpectedly.".to_string())?;
 				}
 				Err(message) => self.push_issue("source page", format!("A linked-page asset could not be stored ({raw}): {message}")),
 			}
 		}
-		let policy = format!("<meta http-equiv=\"Content-Security-Policy\" content=\"{ARCHIVE_CSP}\"><meta name=\"referrer\" content=\"no-referrer\">");
-		if let Some(index) = html.to_ascii_lowercase().find("<head>") {
-			html.insert_str(index + "<head>".len(), &policy);
-		} else {
-			html = format!("<!doctype html><html><head>{policy}</head><body>{html}</body></html>");
-		}
-		let provenance = format!(
-			"<aside style=\"padding:12px;background:#111;color:#ddd;font:14px system-ui\">Locally captured by Vale from <a style=\"color:#7adac8\" href=\"{}\">{}</a>. Active content was removed. <a style=\"color:#7adac8\" href=\"../../{}\">Original response</a>.</aside>",
-			htmlescape::encode_attribute(final_url.as_str()),
-			htmlescape::encode_minimal(final_url.as_str()),
-			raw_path
-		);
-		if let Some(index) = html.to_ascii_lowercase().find("<body") {
-			if let Some(close) = html[index..].find('>') {
-				html.insert_str(index + close + 1, &provenance);
-			}
-		}
+		let final_url_string = final_url.to_string();
+		let raw_path_for_reader = raw_path.clone();
+		let (html, html_sha256) = tokio::task::spawn_blocking(move || finish_external_html(html, &final_url_string, &raw_path_for_reader))
+			.await
+			.map_err(|_| "The source-page finalization task stopped unexpectedly.".to_string())?;
 		let sanitized_path = "files/source/index.html";
 		if html.len() as u64 > self.remaining_for_assets() {
 			return Err("The sanitized source page no longer fit inside the capture allowance reserved for it.".to_string());
@@ -2630,7 +2763,7 @@ impl CaptureContext {
 			original_url: final_url.to_string(),
 			content_type: "text/html; charset=utf-8".to_string(),
 			bytes: html.len() as u64,
-			sha256: format!("{:x}", Sha256::digest(html.as_bytes())),
+			sha256: html_sha256,
 		});
 		self.asset_paths.insert(source.to_string(), sanitized_path.to_string());
 		Ok(sanitized_path.to_string())
@@ -2769,6 +2902,17 @@ mod tests {
 		for forbidden in ["<script", "linear-gradient", "box-shadow", "text-shadow", "drop-shadow"] {
 			assert!(!first.to_ascii_lowercase().contains(forbidden), "reader contains forbidden token {forbidden}");
 		}
+	}
+
+	#[test]
+	fn archive_document_build_preserves_manifest_and_reader() {
+		let manifest = manifest_fixture();
+		let expected = serde_json::to_vec_pretty(&manifest).unwrap();
+		let (manifest, bytes, reader, issues) = build_archive_documents(manifest).unwrap();
+		assert_eq!(bytes, expected);
+		assert!(reader.contains("A deterministic Vale archive title"));
+		assert_eq!(issues, "[]");
+		assert_eq!(manifest.format, "VALE_ARCHIVE_1");
 	}
 
 	#[test]
@@ -3124,6 +3268,21 @@ mod tests {
 		assert!(try_reserve_pending(&pending));
 	}
 
+	#[cfg(target_os = "linux")]
+	#[test]
+	fn archive_worker_runs_below_interactive_cpu_priority() {
+		let (sender, receiver) = sync_channel(1);
+		std::thread::spawn(move || {
+			lower_archive_worker_priority().unwrap();
+			unsafe extern "C" {
+				fn getpriority(which: i32, who: u32) -> i32;
+			}
+			let priority = unsafe { getpriority(0, 0) };
+			sender.send(priority).unwrap();
+		});
+		assert!(receiver.recv().unwrap() >= ARCHIVE_WORKER_NICE);
+	}
+
 	#[test]
 	fn profile_quota_snapshot_and_admission_share_durable_reservations() {
 		let mut connection = archive_database();
@@ -3381,5 +3540,104 @@ mod tests {
 		assert_eq!(entries.first().map(|entry| entry.id.as_str()), Some("failed"));
 		assert!(entries.iter().any(|entry| entry.status == "failed"));
 		assert_eq!(bounded_archive_list_limit(usize::MAX), MAX_ARCHIVE_LIST_ENTRIES);
+	}
+}
+
+#[cfg(test)]
+mod surface_fixture_tests {
+	use super::*;
+	fn entry() -> ArchiveEntryView {
+		ArchiveEntryView {
+			id: "review-save".into(),
+			post_id: "post0".into(),
+			permalink: "/r/woodworking/comments/post0/discussion/".into(),
+			title: "A small workshop, one good workbench".into(),
+			community: "woodworking".into(),
+			source_url: String::new(),
+			status: "ready".into(),
+			status_label: "Saved".into(),
+			created: "Today".into(),
+			captured: "Today".into(),
+			comment_count: 24,
+			asset_count: 0,
+			generated_asset_count: 4,
+			local_file_count: 4,
+			total_bytes: 524288,
+			total_size: "512 KiB".into(),
+			issues: Vec::new(),
+			error: String::new(),
+		}
+	}
+	#[test]
+	fn saved_surface_fixtures() {
+		for theme in ["dark", "light"] {
+			let saved = SavedTemplate {
+				prefs: crate::reading_fixtures::preferences(theme),
+				url: "/saved".into(),
+				entries: vec![entry()],
+				quota: ArchiveQuotaSnapshot {
+					used_size: "512 KiB".into(),
+					reserved_size: "0 B".into(),
+					effective_limit_size: "2 GiB".into(),
+					instance_limit_size: "2 GiB".into(),
+					..ArchiveQuotaSnapshot::default()
+				},
+			}
+			.render()
+			.unwrap();
+			assert!(saved.contains("A small workshop, one good workbench"));
+			crate::reading_fixtures::export(theme, "saved.html", &saved);
+			let detail = SavedDetailTemplate {
+				prefs: crate::reading_fixtures::preferences(theme),
+				url: "/saved/review-save".into(),
+				entry: entry(),
+			}
+			.render()
+			.unwrap();
+			assert!(detail.contains("Read local snapshot"));
+			crate::reading_fixtures::export(theme, "saved-detail.html", &detail);
+		}
+	}
+}
+
+/// Explicit indexing of a published, owned archive. Never fetches Reddit.
+pub async fn index_post(request: Request<Body>) -> Result<Response<Body>, String> {
+	let Some(profile) = account::context(&request).map(|c| c.profile_id) else {
+		return Ok(plain_response(StatusCode::UNAUTHORIZED, "Sign in to index an archive."));
+	};
+	let id = request.param("archive_id").unwrap_or_default();
+	if !account::valid_post_id(&id) {
+		return Ok(plain_response(StatusCode::NOT_FOUND, "Archive not found."));
+	}
+	let Some(entry) = entry_for_profile(profile, &id)? else {
+		return Ok(plain_response(StatusCode::NOT_FOUND, "Archive not found."));
+	};
+	if !entry.is_viewable() {
+		return Ok(plain_response(StatusCode::CONFLICT, "Wait for the archive capture to finish."));
+	}
+	let path = archive_directory(profile, &id).join("manifest.json");
+	let result = tokio::task::spawn_blocking(move || -> Result<usize, String> {
+		use std::io::Read;
+		let file = std::fs::File::open(path).map_err(|_| "Archive manifest is unavailable.")?;
+		let mut bytes = Vec::new();
+		file.take(128 * 1024 * 1024 + 1).read_to_end(&mut bytes).map_err(|_| "Archive could not be read.")?;
+		if bytes.len() > 128 * 1024 * 1024 {
+			return Err("Archive exceeds the search indexing size limit; its reader remains available.".into());
+		}
+		let manifest: ArchiveManifest = serde_json::from_slice(&bytes).map_err(|_| "Archive manifest is invalid.")?;
+		crate::library::index_archive(&mut account::open_database()?, profile, &id, &manifest).map_err(|_| "Unable to index this archive within the search limits.".into())
+	})
+	.await
+	.map_err(|_| "Indexing stopped unexpectedly.")?;
+	match result {
+		Ok(_) => Ok(
+			Response::builder()
+				.status(StatusCode::SEE_OTHER)
+				.header("location", "/reading/library")
+				.header("cache-control", "private, no-store")
+				.body(Body::empty())
+				.unwrap(),
+		),
+		Err(message) => Ok(plain_response(StatusCode::UNPROCESSABLE_ENTITY, &message)),
 	}
 }

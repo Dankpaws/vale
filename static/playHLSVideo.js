@@ -172,7 +172,14 @@
 		state.phase = "ready";
 		setStatus(video);
 		hideFailure(video);
-		safePlay(video);
+		const resume = () => {
+			if (state.cycle !== cycle) return;
+			if (state.resumeTime > 0) video.currentTime = state.resumeTime;
+			state.resumeTime = 0;
+			safePlay(video);
+		};
+		if (state.resumeTime > 0 && video.readyState < 1) listen(state, video, "loadedmetadata", resume, { once: true });
+		else resume();
 	};
 
 	const nextNetworkRetry = async (video, state, cycle) => {
@@ -374,6 +381,8 @@
 		teardown(video, state);
 		state.cycle += 1;
 		const cycle = state.cycle;
+		const retry = frameElement(video)?.querySelector("[data-media-retry]");
+		if (retry) listen(state, retry, "click", () => startCycle(video, state));
 		state.phase = "preparing";
 		state.networkRetries = 0;
 		state.mediaRetries = 0;
@@ -406,7 +415,8 @@
 		if (video.dataset.mediaDeferred === "true" && video.closest("[hidden]")) return;
 		const existing = players.get(video);
 		if (existing) {
-			if (existing.phase === "ready") safePlay(video);
+			if (existing.phase === "suspended") startCycle(video, existing);
+			else if (existing.phase === "ready") safePlay(video);
 			return;
 		}
 		const state = {
@@ -422,13 +432,17 @@
 		};
 		players.set(video, state);
 		video.dataset.mediaInitialized = "true";
-		const retry = frameElement(video)?.querySelector("[data-media-retry]");
-		if (retry) listen(state, retry, "click", () => startCycle(video, state));
 		startCycle(video, state);
 	};
 
 	const pause = (video) => {
-		if (video instanceof HTMLVideoElement) video.pause();
+		if (!(video instanceof HTMLVideoElement)) return;
+		const state = players.get(video);
+		if (!state || state.phase === "suspended") return;
+		state.resumeTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+		state.cycle += 1;
+		teardown(video, state);
+		state.phase = "suspended";
 	};
 
 	const destroy = (video) => {

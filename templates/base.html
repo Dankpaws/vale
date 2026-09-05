@@ -28,10 +28,10 @@
 		<link rel="manifest" type="application/json" href="/manifest.json">
 		<link rel="icon" type="image/svg+xml" href="/vale-mark.svg">
 		<link rel="shortcut icon" type="image/x-icon" href="/favicon.ico">
-			<link rel="stylesheet" type="text/css" href="/style.css?v={{ env!("CARGO_PKG_VERSION") }}-vale-v60">
+			<link rel="stylesheet" type="text/css" href="/style.css?v={{ env!("CARGO_PKG_VERSION") }}-vale-v78">
 			<script src="/register-sw.js" defer></script>
-			<script src="/playHLSVideo.js?v={{ env!("CARGO_PKG_VERSION") }}-v7" defer></script>
-			<script src="/vale-interactions.js?v={{ env!("CARGO_PKG_VERSION") }}-v42" defer></script>
+			<script src="/playHLSVideo.js?v={{ env!("CARGO_PKG_VERSION") }}-v8" defer></script>
+			<script src="/vale-interactions.js?v={{ env!("CARGO_PKG_VERSION") }}-v55" defer></script>
 			<meta name="vale-video-quality" content="{{ prefs.video_quality }}">
 		{% endblock %}
 	</head>
@@ -57,6 +57,9 @@
 						<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"></circle><circle cx="17" cy="10" r="2.25"></circle><path d="M3.5 19c.35-3.35 2.2-5 5.5-5s5.15 1.65 5.5 5"></path><path d="M14.5 15c2.9-.45 4.85.75 5.5 3.5"></path></svg>
 						<span>Feeds</span>
 					</a>
+                    <a class="nav-link{% if url.starts_with("/reading") || url.starts_with("/offline.html") %} is-active{% endif %}" href="/reading" aria-label="Reading"{% if url.starts_with("/reading") || url.starts_with("/offline.html") %} aria-current="page"{% endif %}>
+                        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v16M12 5C9 3 5 3 2 4v15c3-1 7-1 10 2 3-3 7-3 10-2V4c-3-1-7-1-10 1Z"></path></svg><span>Reading</span>
+                    </a>
 					<a class="nav-link{% if url.starts_with("/saved") %} is-active{% endif %}" href="/saved" aria-label="Saved"{% if url.starts_with("/saved") %} aria-current="page"{% endif %}>
 						<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21l-6-3.8L6 21V4.5Z"></path></svg>
 						<span>Saved</span>

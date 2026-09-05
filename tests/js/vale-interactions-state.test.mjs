@@ -13,6 +13,7 @@ const {
 	acceptBroadcastSequence,
 	appendBoundedUndo,
 	boundedHiddenVerificationIds,
+	emptyListingNeedsContinuation,
 	hiddenIntentNeedsWrite,
 	hiddenShellEvictionPlan,
 	hiddenVerificationCanApply,
@@ -28,6 +29,13 @@ const {
 	settingsSaveBarShouldActivate,
 	settingsSavedCleanTarget,
 } = sandbox.module.exports;
+
+test("empty bounded listing windows continue only while a safe next page exists", () => {
+	assert.equal(emptyListingNeedsContinuation(0, "complete", true), true);
+	assert.equal(emptyListingNeedsContinuation(1, "complete", true), false);
+	assert.equal(emptyListingNeedsContinuation(0, "retry", true), false);
+	assert.equal(emptyListingNeedsContinuation(0, "end", false), false);
+});
 
 test("the mutation queue is FIFO by post and collapses an unsent duplicate key", () => {
 	const queue = new OrderedKeyQueue();
@@ -187,4 +195,33 @@ test("uncertain recovery and Undo eviction keep listings authoritative and bound
 	assert.equal(JSON.stringify(hiddenShellEvictionPlan(true, true)), JSON.stringify({ remove: true, trackPending: true }));
 	assert.equal(JSON.stringify(hiddenShellEvictionPlan(true, false)), JSON.stringify({ remove: true, trackPending: false }));
 	assert.equal(JSON.stringify(hiddenShellEvictionPlan(false, true)), JSON.stringify({ remove: false, trackPending: false }));
+});
+
+test("Back preserves the activated reading control instead of reducing every link to its card", () => {
+	const { feedFocusControl, feedFocusSelector } = sandbox.module.exports;
+	for (const [selector, expected] of [[".post_thumbnail", "thumbnail"], [".post_title_link", "title"], [".post_comments", "comments"], [".preview-discussion", "preview-discussion"], ["[data-inline-toggle]", "inline"], [".preview-footer [data-inline-toggle]", "preview-close"]]) {
+		const element = { matches: (query) => query === selector };
+		assert.equal(feedFocusControl(element), expected);
+		assert.notEqual(feedFocusSelector(expected), ":scope");
+	}
+	assert.equal(feedFocusSelector("card"), ":scope", "old history entries keep their card fallback");
+	assert.equal(feedFocusSelector("unknown"), ":scope");
+});
+
+
+test("reading navigation handles twelve boundary cases", () => {
+ const next = sandbox.module.exports.readingNavigationIndex;
+ for (const [length,current,direction,expected] of [
+  [0,-1,1,-1],[1,-1,1,0],[1,0,1,0],[1,0,-1,0],
+  [3,2,1,0],[3,0,-1,2],[3,-1,-1,2],[3,99,1,0],
+  [-1,0,1,-1],[2.5,0,1,-1],[3,0,0,-1],[3,NaN,1,-1],
+ ]) assert.equal(next(length,current,direction),expected);
+});
+
+
+test("reading viewport anchor: twelve boundaries",()=>{
+ const choose=sandbox.module.exports.readingAnchorChoice;
+ const a={id:"a",top:20,bottom:150},b={id:"b",top:150,bottom:400};
+ const cases=[[[a,b],100,800,"","a"],[[a,b],150,800,"","b"],[[a,b],400,800,"",null],[[],100,800,"",null],[[a,b],100,800,"b","b"],[[a,b],100,800,"missing",null],[[{id:"far",top:900,bottom:1000}],100,800,"",null],[[{id:"zero",top:100,bottom:100}],100,800,"",null],[[a],NaN,800,"",null],[[a],100,50,"",null],[[{id:"long",top:-5000,bottom:500}],100,800,"","long"],[[{id:"",top:0,bottom:500},b],100,800,"","b"]];
+ for(const [nodes,line,height,explicit,expected]of cases)assert.equal(choose(nodes,line,height,explicit)?.id||null,expected);
 });

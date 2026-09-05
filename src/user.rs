@@ -123,7 +123,8 @@ pub async fn profile(req: Request<Body>) -> Result<Response<Body>, String> {
 			Err(_) => return listing::policy_unavailable_response(req, fragment_mode).await,
 		};
 		match listing::accumulate(&path, false, policy).await {
-			Ok(result) => {
+			Ok(mut result) => {
+				crate::activity::annotate(&req, &mut result.posts)?;
 				let previous_url = result.previous_url(&url);
 				let next_url = result.next_url(&url);
 				let all_posts_filtered = result.all_posts_filtered();
@@ -174,6 +175,7 @@ pub async fn profile(req: Request<Body>) -> Result<Response<Body>, String> {
 			Ok((mut posts, cursors)) => {
 				let (_, all_posts_filtered) = filter_posts(&mut posts, &filters);
 				crate::account::filter_hidden_posts(&req, &mut posts)?;
+				crate::activity::annotate(&req, &mut posts)?;
 				let no_posts = posts.is_empty();
 				let visible_count = posts.len();
 				let all_posts_hidden_nsfw = !no_posts && (posts.iter().all(|p| p.flags.nsfw) && Preferences::new(&req).show_nsfw != "on");
@@ -290,5 +292,52 @@ mod tests {
 		let user = user("spez").await;
 		assert!(user.is_ok());
 		assert!(user.unwrap().karma > 100);
+	}
+}
+
+#[cfg(test)]
+mod surface_fixture_tests {
+	use super::*;
+	#[tokio::test]
+	async fn author_surface_fixture() {
+		for theme in ["dark", "light"] {
+			let mut posts = crate::reading_fixtures::posts().await;
+			let mut comment = crate::reading_fixtures::posts().await.remove(0);
+			comment.title.clear();
+			comment.id = "excerpt".into();
+			comment.link_title = "A discussion worth coming back to".into();
+			posts.insert(1, comment);
+			let html = UserTemplate {
+				user: User {
+					name: "field_reader".into(),
+					title: String::new(),
+					icon: String::new(),
+					karma: 1200,
+					created: "Jan 2020".into(),
+					banner: String::new(),
+					description: "Notes on making and growing things.".into(),
+					nsfw: false,
+				},
+				posts,
+				sort: ("new".into(), "day".into()),
+				ends: (String::new(), String::new()),
+				listing: "overview".into(),
+				prefs: crate::reading_fixtures::preferences(theme),
+				url: "/user/field_reader".into(),
+				redirect_url: String::new(),
+				is_filtered: false,
+				all_posts_filtered: false,
+				all_posts_hidden_nsfw: false,
+				no_posts: false,
+				listing_status: "complete".into(),
+				visible_count: 9,
+			}
+			.render()
+			.unwrap();
+			assert!(html.contains("<h1>u/field_reader</h1>"));
+			assert!(html.contains("<details class=\"listing-comment\" open>"));
+			assert!(html.contains("aria-label=\"Sort author posts\""));
+			crate::reading_fixtures::export(theme, "author.html", &html);
+		}
 	}
 }

@@ -172,6 +172,24 @@ async fn fetch_media(source: &str, maximum: usize) -> Result<Vec<u8>, String> {
 	Ok(bytes)
 }
 
+type GalleryArchive = ZipWriter<Cursor<Vec<u8>>>;
+
+fn append_gallery_file(mut archive: GalleryArchive, entry_name: String, bytes: Vec<u8>) -> Result<GalleryArchive, String> {
+	let options = FileOptions::default().compression_method(CompressionMethod::Stored).unix_permissions(0o600);
+	archive
+		.start_file(entry_name, options)
+		.map_err(|error| format!("Unable to start gallery archive: {error}"))?;
+	archive.write_all(&bytes).map_err(|error| format!("Unable to write gallery archive: {error}"))?;
+	Ok(archive)
+}
+
+fn finish_gallery_archive(mut archive: GalleryArchive) -> Result<Vec<u8>, String> {
+	archive
+		.finish()
+		.map_err(|error| format!("Unable to finish gallery archive: {error}"))
+		.map(Cursor::into_inner)
+}
+
 pub async fn gallery_download(request: Request<Body>) -> Result<Response<Body>, String> {
 	let form = match read_form(request).await {
 		Ok(form) => form,
@@ -189,7 +207,6 @@ pub async fn gallery_download(request: Request<Body>) -> Result<Response<Body>, 
 	}
 
 	let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
-	let options = FileOptions::default().compression_method(CompressionMethod::Stored).unix_permissions(0o600);
 	let mut total = 0usize;
 	for (index, source) in sources.iter().enumerate() {
 		let bytes = match fetch_media(source, MAX_GALLERY_ITEM_BYTES).await {
@@ -202,12 +219,13 @@ pub async fn gallery_download(request: Request<Body>) -> Result<Response<Body>, 
 		}
 		let basename = source.split('?').next().and_then(|path| path.rsplit('/').next()).unwrap_or("image.jpg");
 		let entry_name = safe_download_filename(&format!("{:02}_{basename}", index + 1), "gallery-image.jpg");
-		archive
-			.start_file(entry_name, options)
-			.map_err(|error| format!("Unable to start gallery archive: {error}"))?;
-		archive.write_all(&bytes).map_err(|error| format!("Unable to write gallery archive: {error}"))?;
+		archive = tokio::task::spawn_blocking(move || append_gallery_file(archive, entry_name, bytes))
+			.await
+			.map_err(|_| "The gallery packaging task stopped unexpectedly.".to_string())??;
 	}
-	let body = archive.finish().map_err(|error| format!("Unable to finish gallery archive: {error}"))?.into_inner();
+	let body = tokio::task::spawn_blocking(move || finish_gallery_archive(archive))
+		.await
+		.map_err(|_| "The gallery packaging task stopped unexpectedly.".to_string())??;
 	let length = body.len() as u64;
 	Ok(attachment_response(Body::from(body), "application/zip", &filename, length))
 }
@@ -352,6 +370,7 @@ pub async fn video_download(request: Request<Body>) -> Result<Response<Body>, St
 mod tests {
 	use super::*;
 	use hyper::body::Bytes;
+	use std::io::Read;
 
 	#[test]
 	fn only_known_same_origin_media_maps_to_reddit_cdns() {
@@ -375,6 +394,21 @@ mod tests {
 		assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:a:0"]));
 		assert!(!arguments.iter().any(|argument| argument == "0:a:0?"));
 		assert!(!arguments.iter().any(|argument| argument.starts_with("-c:") || argument == "libx264" || argument == "aac"));
+	}
+
+	#[test]
+	fn gallery_packaging_preserves_names_and_bytes() {
+		let archive = ZipWriter::new(Cursor::new(Vec::new()));
+		let archive = append_gallery_file(archive, "01_first.jpg".to_string(), b"first".to_vec()).unwrap();
+		let archive = append_gallery_file(archive, "02_second.png".to_string(), b"second".to_vec()).unwrap();
+		let bytes = finish_gallery_archive(archive).unwrap();
+		let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+		let mut first = String::new();
+		zip.by_name("01_first.jpg").unwrap().read_to_string(&mut first).unwrap();
+		let mut second = String::new();
+		zip.by_name("02_second.png").unwrap().read_to_string(&mut second).unwrap();
+		assert_eq!(first, "first");
+		assert_eq!(second, "second");
 	}
 
 	#[tokio::test]

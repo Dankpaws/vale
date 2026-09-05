@@ -12,6 +12,7 @@ const MAX_COMBINED_POSTS: usize = 12;
 const MAX_COMBINED_ROOT_COMMENTS: usize = 500;
 
 pub struct CombinedDiscussionView {
+	pub activity: crate::activity::Visit,
 	pub title: String,
 	pub community: String,
 	pub permalink: String,
@@ -20,6 +21,7 @@ pub struct CombinedDiscussionView {
 }
 
 pub struct CombinedCommentView {
+	pub activity: crate::activity::Visit,
 	pub post_id: String,
 	pub community: String,
 	pub post_title: String,
@@ -77,6 +79,7 @@ pub async fn item(request: Request<Body>) -> Result<Response<Body>, String> {
 	let mut source_url = String::new();
 	let mut discussions = Vec::new();
 	let mut combined_comments = Vec::new();
+	let mut sources = Vec::new();
 
 	for id in ids {
 		let response = json(format!("/comments/{id}.json?sort=top&limit=500&depth=10&raw_json=1"), true)
@@ -100,6 +103,11 @@ pub async fn item(request: Request<Body>) -> Result<Response<Body>, String> {
 			));
 		}
 
+		sources.push((post, response));
+	}
+
+	// Validate every source before recording any visits to this combined page.
+	for (post, response) in sources {
 		let root_scores = response[1]["data"]["children"]
 			.as_array()
 			.into_iter()
@@ -107,7 +115,7 @@ pub async fn item(request: Request<Body>) -> Result<Response<Body>, String> {
 			.filter(|thing| thing["kind"].as_str() == Some("t1"))
 			.filter_map(|thing| Some((thing["data"]["id"].as_str()?.to_string(), thing["data"]["score"].as_i64().unwrap_or_default())))
 			.collect::<HashMap<_, _>>();
-		let groups = ThreadModel::from_listing(
+		let mut groups = ThreadModel::from_listing(
 			&response[1],
 			&post.id,
 			response[0]["data"]["children"][0]["data"]["num_comments"].as_u64().unwrap_or_default() as usize,
@@ -119,8 +127,12 @@ pub async fn item(request: Request<Body>) -> Result<Response<Body>, String> {
 			&prefs,
 		)
 		.into_projection();
+		let activity = crate::activity::for_post(&request, &post, false)?;
+		account::record_post_view(&request, &post)?;
+		activity.highlight(&mut groups);
 		for group in groups.into_iter().filter(|group| group.root.kind == "t1") {
 			combined_comments.push(CombinedCommentView {
+				activity: activity.clone(),
 				post_id: post.id.clone(),
 				community: post.community.clone(),
 				post_title: post.title.clone(),
@@ -130,6 +142,7 @@ pub async fn item(request: Request<Body>) -> Result<Response<Body>, String> {
 			});
 		}
 		discussions.push(CombinedDiscussionView {
+			activity,
 			title: post.title,
 			community: post.community,
 			permalink: post.permalink,
@@ -209,6 +222,7 @@ mod tests {
 			url: "/combined?posts=source,copy".to_string(),
 			source_url: "https://example.com/story".to_string(),
 			discussions: vec![CombinedDiscussionView {
+				activity: crate::activity::Visit::default(),
 				title: "Source".to_string(),
 				community: "test".to_string(),
 				permalink: "/r/test/comments/source/thread/".to_string(),
@@ -216,6 +230,7 @@ mod tests {
 				comments: "1".to_string(),
 			}],
 			comments: vec![CombinedCommentView {
+				activity: crate::activity::Visit::default(),
 				post_id: "source".to_string(),
 				community: "test".to_string(),
 				post_title: "Source".to_string(),
@@ -229,5 +244,6 @@ mod tests {
 		.unwrap();
 		assert!(rendered.contains("data-thread-post-id=\"t3_source\""));
 		assert!(rendered.contains("data-thread-sort=\"top\""));
+		crate::reading_fixtures::export("light", "combined.html", &rendered);
 	}
 }

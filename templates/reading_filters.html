@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Reading filters · Vale{% endblock %}
+{% block content %}
+<div id="column_one" class="simple-page">
+<header class="page-hero"><div><span class="eyebrow">YOUR FEEDS</span><h1>Reading filters</h1><p>Domain rules include subdomains. Flair matches exactly; phrases match title text. Matching ignores case. “Only show” rules must all match.</p><a href="/reading">Continue reading</a></div></header>
+{% include "reading-nav.html" %}
+<form method="POST" action="/reading/filters" class="reading-actions"><input type="hidden" name="action" value="add">
+<label>Scope <select name="feed"><option value="">All listings</option>{% for feed in feeds %}<option value="{{ feed.slug }}">{{ feed.name }}</option>{% endfor %}</select></label>
+<label>Action <select name="effect"><option value="hide">Hide matches</option><option value="only">Only show matches</option></select></label>
+<label>Match <select name="kind"><option value="phrase">Title phrase</option><option value="domain">Domain</option><option value="flair">Flair</option><option value="type">Content type</option><option value="spoiler">Spoiler tag</option><option value="episode">Episode boundary</option></select></label>
+<label>Value <input name="value" required maxlength="160" placeholder="e.g. example.com or release"></label>
+<label>Duration <select name="duration"><option value="0">Until removed</option><option value="86400">One day</option><option value="604800">One week</option><option value="2592000">Thirty days</option></select></label>
+<button>Add rule</button><p>Content types: self, link, image, video, gif, gallery. For spoiler tags, choose Hide and enter tagged. For an episode boundary, choose Hide and enter series phrase | season | episode (for example, show | 1 | 2). Posts matching that series need an explicit S01E02-style marker at or before your boundary; unnumbered posts stay hidden. These rules affect listings, not direct discussion links.</p>
+</form>
+{% if rules.is_empty() %}<p>No post rules yet.</p>{% endif %}
+{% for rule in rules %}<article class="history-item"><div><h2>{{ rule.effect }} · {{ rule.kind }} · {{ rule.value }}</h2><p>{% if rule.feed == "" %}All listings{% else %}Feed: {{ rule.feed }}{% endif %} · {% if rule.until == 0 %}Until removed{% else if rule.until <= now %}Expired{% else %}Temporary{% endif %}</p><p><a href="{% if rule.feed == "" %}/{% else %}/f/{{ rule.feed }}/new{% endif %}?vale_filters=show">Review feed with reading rules paused</a></p><form method="POST" action="/reading/filters"><input type="hidden" name="action" value="remove"><input type="hidden" name="id" value="{{ rule.id }}"><input type="hidden" name="until" value="{{ rule.until }}"><button>Remove rule</button></form></div></article>{% endfor %}
+</div>
+{% endblock %}

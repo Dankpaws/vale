@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Following · {{ entry.title }} · Vale{% endblock %}
+{% block content %}
+<div id="column_one" class="simple-page">
+<header class="page-hero"><div><span class="eyebrow">FOLLOWED DISCUSSION</span><h1>{{ entry.title }}</h1><p><a href="/comments/{{ entry.post_id }}">Open discussion</a> · <a href="/reading">Continue reading</a></p></div></header>
+{% include "reading-nav.html" %}
+<p>{{ state.new_count }} newly observed replies since your checkpoint, after current author and keyword filters. {% if !state.complete %}Coverage is incomplete; more replies may remain.{% endif %}</p>
+{% if state.error != "" %}<p role="status">{{ state.error }}</p>{% endif %}
+{% if state.checked == 0 %}<p>No refresh yet. The first capture establishes a baseline.</p>{% else %}<p>Last checked: {{ state.checked_label() }} ago.</p>{% endif %}
+{% if state.snoozed() %}<p>Refresh snoozed for one day; resume whenever you want.</p>{% endif %}
+<form class="reading-actions" method="POST" action="/reading/watch"><input type="hidden" name="post" value="{{ entry.post_id }}"><button name="action" value="refresh">Check for replies</button><button name="action" value="snooze">Snooze one day</button><button name="action" value="resume">Resume refresh</button><p>Refreshes are limited to once per discussion every 15 minutes.</p></form>
+<form method="POST" action="/reading/command"><input type="hidden" name="post_id" value="{{ entry.post_id }}"><input type="hidden" name="title" value="{{ entry.title }}"><input type="hidden" name="community" value="{{ entry.community }}"><input type="hidden" name="revision" value="{{ entry.revision }}"><input type="hidden" name="anchor" value="{{ entry.anchor }}"><input type="hidden" name="return_to" value="/reading/watch?post={{ entry.post_id }}"><button name="action" value="caught-up">Mark discussion caught up</button></form>
+<details><summary>Branches to follow</summary><p>{% if branches.is_empty() %}Following the whole discussion.{% else %}Only replies within the selected branches appear here.{% endif %} Use “Follow branch” on a comment in the discussion to choose a branch.</p>{% for branch in branches %}<p><a href="/comments/{{ entry.post_id }}/comments/{{ branch.id }}?context=8#{{ branch.id }}">u/{{ branch.author }} · {{ branch.excerpt }}</a></p><form method="POST" action="/reading/watch"><input type="hidden" name="post" value="{{ entry.post_id }}"><input type="hidden" name="branch" value="{{ branch.id }}"><button name="action" value="unbranch">Stop following this branch</button></form>{% endfor %}<form method="POST" action="/reading/watch"><input type="hidden" name="post" value="{{ entry.post_id }}"><button name="action" value="whole">Follow whole discussion</button></form></details>
+<p>Showing {{ comments.len() }} retained replies in observation order.</p>
+{% for comment in comments %}<article class="history-item"><div><p>u/{{ comment.author }} · <a href="/comments/{{ entry.post_id }}/comments/{{ comment.id }}?context=8#{{ comment.id }}">Read reply with context</a></p><p>{{ comment.body }}</p>{% if comment.parent != entry.post_id %}<a href="/comments/{{ entry.post_id }}/comments/{{ comment.parent }}?context=8#{{ comment.parent }}">Parent comment</a>{% endif %}</div></article>{% endfor %}
+<nav aria-label="Reply pages">{% if previous != "" %}<a href="{{ previous }}">Previous replies</a>{% endif %} {% if next != "" %}<a href="{{ next }}">Next replies</a>{% endif %}</nav>
+</div>
+{% endblock %}

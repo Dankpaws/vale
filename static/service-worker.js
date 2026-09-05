@@ -1,9 +1,11 @@
-const CACHE = "vale-v76-static";
+const CACHE = "vale-v97-static";
 const STATIC_ASSETS = [
-	"/style.css",
-	"/vale-interactions.js",
-	"/playHLSVideo.js",
+	"/style.css?v=__VALE_VERSION__-vale-v78",
+	"/vale-interactions.js?v=__VALE_VERSION__-v55",
+	"/playHLSVideo.js?v=__VALE_VERSION__-v8",
 	"/manifest.json",
+	"/offline.html",
+	"/offline.js",
 	"/vale-mark.svg",
 	"/logo.png",
 	"/touch-icon-iphone.png",
@@ -29,18 +31,23 @@ self.addEventListener("fetch", (event) => {
 	if (request.method !== "GET" || url.origin !== self.location.origin) return;
 	if (request.headers.get("X-Vale-Fragment") === "posts-v1") return;
 
+    // Never cache authenticated navigation responses. An unavailable connection
+    // opens only the empty offline shell, which still requires a pack passphrase.
+    if (request.mode === "navigate" && url.pathname !== "/offline.html") {
+        event.respondWith(fetch(request).catch(async () => (await caches.open(CACHE)).match("/offline.html").then(shell => shell || Response.error())));
+        return;
+    }
 	// Never persist feeds, comments, searches, proxied media, or browser preferences.
-	if (request.mode === "navigate" || url.pathname.startsWith("/img/") || url.pathname.startsWith("/vid/") || url.pathname.startsWith("/hls/") || url.pathname.startsWith("/preview/")) return;
+	if ((request.mode === "navigate" && url.pathname !== "/offline.html") || url.pathname.startsWith("/img/") || url.pathname.startsWith("/vid/") || url.pathname.startsWith("/hls/") || url.pathname.startsWith("/preview/")) return;
 
-	if (STATIC_ASSETS.includes(url.pathname) || url.pathname === "/favicon.ico") {
+	if (STATIC_ASSETS.includes(`${url.pathname}${url.search}`) || url.pathname === "/favicon.ico") {
 		event.respondWith(
 			caches.open(CACHE).then(async (cache) => {
 				const cached = await cache.match(request);
-				const fresh = fetch(request).then((response) => {
-					if (response.ok) cache.put(request, response.clone());
-					return response;
-				});
-				return cached || fresh;
+				if (cached) return cached;
+				const response = await fetch(request);
+				if (response.ok) await cache.put(request, response.clone());
+				return response;
 			}),
 		);
 	}

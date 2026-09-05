@@ -266,7 +266,7 @@ async fn main() {
 
 	// Define default headers (added to all responses)
 	app.default_headers = headers! {
-		"Referrer-Policy" => "no-referrer",
+		"Referrer-Policy" => "same-origin",
 		"X-Content-Type-Options" => "nosniff",
 		"X-Frame-Options" => "DENY",
 		"Permissions-Policy" => "camera=(), microphone=(), geolocation=(), payment=()",
@@ -342,9 +342,13 @@ async fn main() {
 	app
 		.at("/vale-interactions.js")
 		.get(|_| resource(include_str!("../static/vale-interactions.js"), "text/javascript", false).boxed());
-	app
-		.at("/service-worker.js")
-		.get(|_| resource(include_str!("../static/service-worker.js"), "text/javascript", false).boxed());
+	app.at("/service-worker.js").get(|_| {
+		async {
+			let script = include_str!("../static/service-worker.js").replace("__VALE_VERSION__", env!("CARGO_PKG_VERSION"));
+			resource(&script, "text/javascript", false).await
+		}
+		.boxed()
+	});
 	app.at("/healthz").get(|_| account::health().boxed());
 
 	// Native Vale profiles and authentication.
@@ -356,6 +360,43 @@ async fn main() {
 	app.at("/account/users").post(|r| account::create_user_post(r).boxed());
 	app.at("/account/users/:id/toggle").post(|r| account::toggle_user_post(r).boxed());
 	app.at("/account/users/:id/password").post(|r| account::reset_user_password_post(r).boxed());
+	app
+		.at("/reading/filters")
+		.get(|r| redlib::reading_filters::page(r).boxed())
+		.post(|r| redlib::reading_filters::mutate(r).boxed());
+	app.at("/reading/watch").get(|r| redlib::watch::page(r).boxed()).post(|r| redlib::watch::mutate(r).boxed());
+	app
+		.at("/reading/editions")
+		.get(|r| redlib::editions::page(r).boxed())
+		.post(|r| redlib::editions::mutate(r).boxed());
+	app
+		.at("/reading/library")
+		.get(|r| redlib::library::page(r).boxed())
+		.post(|r| redlib::library::mutate(r).boxed());
+	app.at("/saved/:archive_id/index").post(|r| redlib::archive::index_post(r).boxed());
+	app.at("/reading/offline/catalog").get(|r| redlib::offline::catalog(r).boxed());
+	app.at("/reading/offline/data").get(|r| redlib::offline::data(r).boxed());
+	app.at("/reading/offline/sync").post(|r| redlib::offline::sync(r).boxed());
+	app
+		.at("/offline.html")
+		.get(|_| resource(include_str!("../static/offline.html"), "text/html", false).boxed());
+	app
+		.at("/offline.js")
+		.get(|_| resource(include_str!("../static/offline.js"), "text/javascript", false).boxed());
+	app
+		.at("/reading/sources")
+		.get(|r| redlib::sources::page(r).boxed())
+		.post(|r| redlib::sources::mutate(r).boxed());
+	app
+		.at("/reading/stories")
+		.get(|r| redlib::stories::page(r).boxed())
+		.post(|r| redlib::stories::mutate(r).boxed());
+	app
+		.at("/reading/agenda")
+		.get(|r| redlib::agenda::page(r).boxed())
+		.post(|r| redlib::agenda::mutate(r).boxed());
+	app.at("/reading").get(|r| redlib::reading::list_get(r).boxed());
+	app.at("/reading/command").post(|r| redlib::reading::command_post(r).boxed());
 	app.at("/history").get(|r| account::history_get(r).boxed());
 	app.at("/history/clear").post(|r| account::history_clear_post(r).boxed());
 	app.at("/saved").get(|r| archive::list_get(r).boxed());
@@ -521,6 +562,8 @@ async fn main() {
 	// Reddit compatibility is deliberately independent from local startup.
 	// Health, setup, login, profiles, and saved local data remain available
 	// while acquisition retries in the background.
+	tokio::spawn(redlib::watch::worker());
+	tokio::spawn(redlib::agenda::worker());
 	LazyLock::force(&OAUTH_CLIENT);
 	tokio::spawn(async {
 		if force_refresh_token().await {

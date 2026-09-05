@@ -103,14 +103,7 @@
 						{% call utils::post_in_list(post) %}
 					</div>
 				{% else %}
-					<article class="comment listing-comment">
-						<div class="comment_left"><p class="comment_score" title="{{ post.score.1 }}">{% if prefs.hide_score != "on" %}{{ post.score.0 }}{% else %}&#x2022;{% endif %}</p><div class="line"></div></div>
-						<details class="comment_right" open>
-							<summary class="comment_data"><a class="comment_link" href="{{ post.permalink }}">Comment</a><span class="created" title="{{ post.created }}">{{ post.rel_time }}</span></summary>
-							<p class="search-result-context">Comment · {{ crate::search::membership_label(prefs, active_feed, post.community) }}</p>
-							<div class="comment_body">{{ post.body|safe }}</div>
-						</details>
-					</article>
+					{% call utils::listing_comment(post, crate::search::membership_label(prefs, active_feed, post.community)) %}
 				{% endif %}
 			{% endfor %}
 			</div>

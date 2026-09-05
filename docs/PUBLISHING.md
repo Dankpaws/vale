@@ -15,13 +15,12 @@ objects are safe to publish.
 The reviewed first binary release is `v0.36.1`, dated 2026-08-30. The signed,
 verified `v0.36.0` source tag remains attached to the parentless public root,
 but its tagged workflow failed before publishing a GitHub Release or any
-assets. Never move, delete, or reuse that failed source tag. Enable GitHub
-private vulnerability reporting before announcing `v0.36.1` so `SECURITY.md`
-has a working non-public channel.
+assets. Never move, delete, or reuse that failed source tag. Keep GitHub private vulnerability reporting enabled so `SECURITY.md` has a
+working non-public channel.
 
 The initial public commit and every public follow-up must use the verified
 maintainer identity `Dankpaws <322286514+Dankpaws@users.noreply.github.com>`.
-The first binary release must carry an annotated `v0.36.1` tag after every
+Each binary release must carry an annotated `v<package-version>` tag after every
 check below passes. An unsigned tag may exist only in an isolated local review
 candidate. Before public announcement, create the public tag with the
 maintainer's configured SSH/GPG signing identity or a GitHub tag/release flow
@@ -44,9 +43,10 @@ as signed. Before creating or updating the public repository:
 4. Preserve `LICENSE`, `CREDITS`, `THIRD_PARTY.md`,
    `THIRD_PARTY_LICENSES.html`, both bundled-asset license files, and the
    applicable Redlib AGPL-3.0 source and notice obligations.
-5. Initialize a new repository from that reviewed tree, inspect the initial
-   commit and every published ref, and verify that no private remote, tag, or
-   generated artifact was copied.
+5. For an initial publication, initialize a new repository from that tree. For
+   later releases, apply the reviewed tree to a clone of the public repository.
+   Inspect every new commit and published ref; verify that no private remote,
+   history, tag, or generated artifact was copied.
 6. Run the approved secret scanner against the new repository's complete
    clean history. For gitleaks, the minimum release check is equivalent to:
 

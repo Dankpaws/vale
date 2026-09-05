@@ -2,12 +2,11 @@
 {% block title %}{{ msg }}{% endblock %}
 {% block sortstyle %}{% endblock %}
 {% block content %}
-	<div id="wall">
+	<section id="wall" class="state-card">
 		<h1>{{ title }}</h1>
-		<br>
 		<p>{{ msg }}</p>
 		<form action="/r/{{ sub }}?redir={{ url }}" method="POST">
 			<input id="save" type="submit" value="Continue">
 		</form>
-	</div>
+	</section>
 {% endblock %}

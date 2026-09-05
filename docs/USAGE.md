@@ -56,6 +56,89 @@ Use a short topic name such as `Programming` or `Photography`, then add the
 community names without the `r/` prefix. Save the change and return to **My
 feed** to confirm that only the intended communities appear.
 
+### Reading
+
+Primary navigation is **Feeds / Reading / Saved**. Reading holds your active
+reading work; Saved holds explicit post archives. These features require a
+server-backed profile (account or shared-profile mode).
+
+- **Read later** queues a discussion without archiving it. **Keep my place**
+  saves your current comment, sort, viewport offset, and expanded branches
+  without leaving the page. **Continue reading** returns to the full discussion
+  and restores that context. If the comment is outside the initial batch, Vale
+  tries one bounded context retrieval. Missing or filtered targets are explained.
+- **Follow discussion** or a selected branch to retain reply observations.
+  **Mark caught up** acknowledges the current observation. The first capture is
+  a baseline; edits are not new replies, and partial retrieval cannot establish
+  that a missing comment was deleted. Followed replies refresh periodically.
+- **Jump through** chooses branches, new comments, original-poster comments, or
+  search matches. Previous/Next remain available in the desktop sticky rail or
+  compact reading toolbar. Navigation covers the comments actually loaded.
+
+#### Editions and saved windows
+
+**Keep this page** preserves up to 25 cards exactly as a saved feed window.
+An **edition** instead selects recent posts from one named feed, deduplicates
+cards, and balances communities so a busy community cannot fill every slot.
+The recent sample covers the previous 24 hours. The 5/10/20-minute choices cap
+the edition at 10/20/25 posts; these are approximate size presets. Your position,
+completion, and reopening persist. Optional six-hour and daily schedules are
+explicit opt-ins and can be removed.
+
+A saved edition is a historical selection of cards. Opening a discussion still
+retrieves Reddit content. It does not implicitly archive comments or media, and
+it is not automatically available offline: create a device offline pack first.
+
+#### Filters and topic watches
+
+Reading filters apply globally or to one named feed. Choose domain, flair, title
+phrase, or post type, then hide matches or show only matches. Rules can expire
+through a temporary snooze. Episode boundaries recognize explicit season/episode
+labels; they are conservative text rules, not an understanding of story content.
+Topic watches match chosen title phrases in posts Vale observes in a named feed.
+Acknowledge or snooze matches; this is not an exhaustive Reddit search service.
+
+#### Saved comments, notes, and offline reading
+
+Save a useful comment with its original and parent context, add your own note,
+and assign a collection. The library searches saved text and notes; archive
+indexing is explicit and bounded. JSON export preserves retained material.
+Edits use revisions so stale tabs cannot silently overwrite newer work.
+
+Device offline packs encrypt selected editions, saved comments, or archives in
+this browser's storage with a passphrase. Media is optional. Open the offline
+reader while connected to prepare it, create a pack, then verify it opens before
+relying on it during travel. The disconnected PWA opens the locked reader.
+Unlocking is local; leaving the page locks it. Keep your passphrase: it is not
+sent to the server for recovery. Clearing browser storage removes local packs;
+export an encrypted copy when you need a portable backup.
+
+Up to ten packs and 100 pending note/progress changes are retained. Sync is an
+explicit action after reconnecting and signing in to the matching profile.
+Conflicting revisions require review; replay does not silently replace newer
+server state. Ordinary authenticated pages are never put in the service-worker
+cache. An offline pack contains only what was explicitly selected and captured.
+
+#### Sources and Stories
+
+Add a public RSS or Atom URL to a named feed in **Sources**. Vale fetches it on
+addition, supports manual refresh, and checks periodically. Entries are ordered
+by publication date and retain unread state. Mark read acknowledges the entries
+shown, so a later arrival is not accidentally consumed by an older page.
+
+Sources make outside updates useful alongside your communities: when an observed
+Reddit post links to the exact source-entry URL, Vale connects the entry and its
+discussion inside the same named feed. URL fragments are ignored; different
+queries, schemes, or paths remain distinct. Hidden posts are omitted. Private
+network endpoints are rejected, and failed refreshes remain visible.
+
+Send a selected entry to a same-feed **Story**, or create a story around retained
+passages yourself. Stories keep dated evidence, your assessment, related material,
+and a stage such as watching, announced, released, follow-up, or resolved.
+Associations can be removed. Counts describe distinct retained sources, not a
+fact-check or consensus judgment. All interpretation is yours; this release has
+no AI summarization or LLM integration.
+
 ### Search
 
 Search is named-feed scoped by default. The result URL records the query,
@@ -141,10 +224,14 @@ profile-scoped and can be restored from **Settings**. The native profile limit
 is 20,000 hidden post IDs.
 
 Vale then replenishes an eligible listing in place without replacing surviving
-cards, expanded content, focus, or the reading anchor. It may inspect up to four
-25-record Reddit pages to produce at most 25 eligible representatives. If that
-bounded pass cannot finish, the visible cards remain usable and the listing
-offers an explicit Retry instead of pretending it reached the end.
+cards, expanded content, focus, or the reading anchor. It may inspect up to 100
+raw Reddit records to produce at most 25 eligible representatives. Named feeds
+request that budget in one normal upstream batch; ordinary listings begin with
+25 and request the remainder only when filtering leaves vacancies. If Reddit
+under-delivers, Vale safely follows the cursor within the same four-request
+ceiling. If that bounded pass cannot finish, the visible cards remain usable
+and the listing offers an explicit Retry instead of pretending it reached the
+end.
 
 On a signed-in profile, hide state follows you to another device. In browser
 mode, hide state is a smaller device cookie and does not provide the same
@@ -258,8 +345,10 @@ offline archives.
 After signing in through the final HTTPS origin, use the browser's **Install**
 or **Add to Home Screen** command. Install it from the origin you will keep;
 an installed PWA belongs to that origin and does not automatically follow a
-hostname migration. The service worker caches only immutable shell assets. It
-does not make profile pages, feeds, comments, or media available offline.
+hostname migration. The service worker caches only immutable shell assets. A
+cached shell request returns immediately without a background refresh; a miss
+fetches once and populates the cache. It does not make profile pages, feeds,
+comments, or media available offline.
 
 ## Privacy boundaries to remember
 

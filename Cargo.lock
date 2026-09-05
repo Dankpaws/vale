@@ -1746,11 +1746,12 @@ dependencies = [
 
 [[package]]
 name = "redlib"
-version = "0.36.1"
+version = "0.37.0"
 dependencies = [
  "ammonia",
  "arc-swap",
  "argon2",
+ "atom_syndication",
  "askama",
  "async-recursion",
  "base2048",

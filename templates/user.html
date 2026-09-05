@@ -3,7 +3,8 @@
 user.name.replace("u/", "") }} (u/{{ user.name }}) · Vale{% endblock %} {%
 block subscriptions %} {% call utils::sub_list("") %} {% endblock %} {% block
 body %}
-<main>
+<main class="feed-page profile-page">
+    <header class="feed-hero"><div><span class="eyebrow">AUTHOR</span><h1>u/{{ user.name }}</h1>{% if !user.title.is_empty() %}<p>{{ user.title }}</p>{% endif %}</div></header>
     {% if !is_filtered %}
     <div id="column_one">
         <form id="sort">
@@ -11,16 +12,16 @@ body %}
                 {% call utils::sort(["/user/", user.name.as_str()].concat(),
                 ["overview", "comments", "submitted"], listing) %}
             </div>
-            <select id="sort_select" name="sort">
+            <select id="sort_select" name="sort" aria-label="Sort author posts">
                 {% call utils::options(sort.0, ["hot", "new", "top",
                 "controversial"], "") %}</select
             >{% if sort.0 == "top" || sort.0 == "controversial" %}<select
-                id="timeframe"
+                id="timeframe" aria-label="Time range"
                 name="t"
             >
                 {% call utils::options(sort.1, ["hour", "day", "week", "month",
                 "year", "all"], "all") %}</select
-            >{% endif %}<button id="sort_submit" class="submit">
+            >{% endif %}<button id="sort_submit" class="submit" aria-label="Apply sorting">
                 <svg
                     width="15"
                     viewBox="0 0 110 100"
@@ -36,51 +37,20 @@ body %}
         </form>
 
         {% if all_posts_hidden_nsfw %}
-        <center>
+        <p class="listing_warn">
             All posts are hidden because they are NSFW. Enable "Show NSFW posts"
             in settings to view.
-        </center>
+        </p>
         {% endif %} {% if no_posts %}
-        <center>No posts were found.</center>
+        <p class="listing_warn">No posts were found.</p>
         {% endif %} {% if all_posts_filtered %}
-        <center>(All content on this page has been filtered)</center>
+        <p class="listing_warn">(All content on this page has been filtered)</p>
         {% else %}
         <div id="posts"{% if listing == "submitted" %} data-vale-listing="posts-v1" data-vale-render-kind="direct" data-listing-status="{{ listing_status }}" data-visible-count="{{ visible_count }}"{% endif %}>
             {% for post in posts %} {% if post.flags.nsfw && prefs.show_nsfw !=
             "on" %} {% else if !post.title.is_empty() %} {% call
             utils::post_in_list(post) %} {% else %}
-            <div class="comment user-comment">
-                <div class="comment_left">
-                    <p class="comment_score" title="{{ post.score.1 }}">
-                        {% if prefs.hide_score != "on" %} {{ post.score.0 }} {%
-                        else %} &#x2022; {% endif %}
-                    </p>
-                    <div class="line"></div>
-                </div>
-                <details class="comment_right" open>
-                    <summary class="comment_data">
-                        <a
-                            class="comment_link"
-                            href="{{ post.permalink }}#{{ post.id }}"
-                            title="{{ post.link_title }}"
-                            >{{ post.link_title }}</a
-                        >
-                        <div class="user_comment_data_divider">
-                            <span class="created-in">&nbsp;in&nbsp;</span>
-                            <a
-                                class="comment_subreddit"
-                                href="/r/{{ post.community }}"
-                                >r/{{ post.community }}</a
-                            >
-                            <span class="dot">&bull;</span>
-                            <span class="created" title="{{ post.created }}"
-                                >&nbsp;{{ post.rel_time }}</span
-                            >
-                        </div>
-                    </summary>
-                    <p class="comment_body">{{ post.body|safe }}</p>
-                </details>
-            </div>
+            {% call utils::listing_comment(post, "Comment") %}
             {% endif %} {% endfor %}
         </div>
         {% endif %}
@@ -107,16 +77,16 @@ body %}
     {% endif %}
     <aside>
         {% if is_filtered %}
-        <center>(Content from u/{{ user.name }} has been filtered)</center>
+        <p class="listing_warn">(Content from u/{{ user.name }} has been filtered)</p>
         {% endif %}
-        <div class="panel" id="user">
-            <img
+        <div class="context-card profile-summary" id="user">
+            {% if !user.icon.is_empty() %}<img
                 loading="lazy"
                 id="user_icon"
                 src="{{ user.icon }}"
-                alt="User icon"
-            />
-            <h1 id="user_title">{{ user.title }}</h1>
+                alt=""
+            />{% endif %}
+            {% if !user.title.is_empty() %}<h2 id="user_title">{{ user.title }}</h2>{% endif %}
             <p id="user_name">u/{{ user.name }}</p>
             <div id="user_description">{{ user.description }}</div>
             <div id="user_details">

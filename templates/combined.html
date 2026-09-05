@@ -17,8 +17,8 @@
 			{% for discussion in discussions %}
 			<article>
 				<span class="community-avatar" aria-hidden="true">{{ discussion.community.get(0..1).unwrap_or_default().to_uppercase() }}</span>
-				<div><a href="{{ discussion.permalink }}">r/{{ discussion.community }} · {{ discussion.title }}</a><small>{{ discussion.score }} points · {{ discussion.comments }} comments</small></div>
-				<a class="quiet-button" href="{{ discussion.permalink }}#comments">Open</a>
+				<div><a href="{{ discussion.activity.url(discussion.permalink) }}">r/{{ discussion.community }} · {{ discussion.title }}</a><small>{{ discussion.score }} points · {{ discussion.comments }} comments{% if discussion.activity.new_comments > 0 %} · <span class="new-comments">+{{ discussion.activity.new_comments }} since last visit</span>{% endif %}</small></div>
+				<a class="quiet-button" href="{{ discussion.activity.url(discussion.permalink) }}#comments">Open</a>
 			</article>
 			{% endfor %}
 		</div>
@@ -49,11 +49,11 @@
 		<div class="combined-comment-list thread-projection" data-thread-projection>
 			<p class="sr-only" data-thread-status role="status" aria-live="polite"></p>
 			{% for entry in comments %}
-			<section class="combined-comment thread-group" data-thread-group data-thread-group-id="{{ entry.group.id }}" data-thread-post-id="t3_{{ entry.post_id }}" data-thread-sort="top">
+			<section class="combined-comment thread-group" data-thread-group data-thread-group-id="{{ entry.group.id }}" data-thread-post-id="t3_{{ entry.post_id }}" data-thread-sort="top" data-activity-visit="{{ entry.activity.id }}">
 				<header>
 					<a href="/r/{{ entry.community }}">r/{{ entry.community }}</a>
 					<span aria-hidden="true">·</span>
-					<a href="{{ entry.post_permalink }}#{{ entry.group.root.id }}">{{ entry.post_title }}</a>
+					<a href="{{ entry.activity.url(entry.post_permalink) }}#{{ entry.group.root.id }}">{{ entry.post_title }}</a>
 					<span class="combined-raw-score">{{ entry.raw_score }} {% if entry.raw_score == 1 %}point{% else %}points{% endif %} at load</span>
 				</header>
 				{{ entry.group.root.render().unwrap_or_default()|safe }}

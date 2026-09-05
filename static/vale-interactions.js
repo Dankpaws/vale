@@ -1,6 +1,18 @@
 (() => {
 	"use strict";
 
+	const readingNavigationIndex = (length, current, direction) => {
+        if (!Number.isInteger(length) || length <= 0 || !Number.isInteger(current) || ![-1, 1].includes(direction)) return -1;
+        if (current < 0 || current >= length) return direction === 1 ? 0 : length - 1;
+        return (current + direction + length) % length;
+    };
+
+    const readingAnchorChoice = (candidates,line,height,explicit="") => {
+        if(explicit)return candidates.find(c=>c.id===explicit)||null;
+        if(!Number.isFinite(line)||!Number.isFinite(height)||height<=line)return null;
+        return candidates.find(c=>c.id&&Number.isFinite(c.top)&&Number.isFinite(c.bottom)&&c.bottom>line&&c.top<height&&c.bottom>c.top)||null;
+    };
+
 	class OrderedKeyQueue {
 		constructor() {
 			this.items = [];
@@ -28,6 +40,24 @@
 			return this.keys.has(key);
 		}
 	}
+
+	const feedFocusControl = (element) => {
+		if (element.matches(".post_thumbnail")) return "thumbnail";
+		if (element.matches(".preview-footer [data-inline-toggle]")) return "preview-close";
+		if (element.matches("[data-inline-toggle]")) return "inline";
+		if (element.matches(".post_title_link")) return "title";
+		if (element.matches(".preview-discussion")) return "preview-discussion";
+		if (element.matches(".post_comments")) return "comments";
+		return "card";
+	};
+	const feedFocusSelector = (control) => ({
+		thumbnail: ".post_thumbnail",
+		"preview-close": ".preview-footer [data-inline-toggle]",
+		inline: ".post_inline_toggle",
+		title: ".post_title_link",
+		"preview-discussion": ".preview-discussion",
+		comments: ".post_comments",
+	}[control] || ":scope");
 
 	const keyedReconciliationPlan = (currentIds, incomingIds, limit = 25) => {
 		if (incomingIds.length > limit || new Set(incomingIds).size !== incomingIds.length || new Set(currentIds).size !== currentIds.length) {
@@ -100,6 +130,7 @@
 		&& !fragmentActive
 		&& !bfcacheActive
 	);
+	const emptyListingNeedsContinuation = (visibleCount, status, hasNext) => visibleCount === 0 && status === "complete" && hasNext;
 
 	const acceptBroadcastSequence = (sequences, source, sequence) => {
 		const previous = sequences.get(source) || 0;
@@ -121,6 +152,10 @@
 	if (typeof window === "undefined" || typeof document === "undefined") {
 		if (typeof module !== "undefined") {
 			module.exports = {
+ readingAnchorChoice,
+            readingNavigationIndex,
+				feedFocusControl,
+				feedFocusSelector,
 				OrderedKeyQueue,
 				acceptBroadcastSequence,
 				appendBoundedUndo,
@@ -135,6 +170,7 @@
 				mutationNeedsListingRecovery,
 				mutationWaiterOutcome,
 				quiescentUncertainStateCanRecover,
+				emptyListingNeedsContinuation,
 				queuedListingRefreshCanStart,
 				serializedFormIsDirty,
 				settingsSaveBarShouldActivate,
@@ -192,6 +228,7 @@
 	const mobileHomeEnhanced = () => mobileHomeMedia.matches && Boolean(document.querySelector(".is-home-feed > .feed-hero"));
 	const effectiveTopInset = () => {
 		const headerBottom = appHeaderBottom();
+        if(window.matchMedia('(max-width: 1120px)').matches && document.querySelector('[data-reading-panel]'))return Math.max(headerBottom,document.querySelector('.reading-tools')?.getBoundingClientRect().bottom||0);
 		return mobileHomeEnhanced() ? mobileHomeTopInset(headerBottom, mobileFeedContextPinned, mobileFeedContextHeight) : headerBottom;
 	};
 
@@ -462,12 +499,13 @@
 
 
 		const toggle = card?.querySelector(`.post_inline_toggle[data-inline-toggle="${panel.id}"]`);
-		if (toggle) syncInlineToggle(toggle, expanded);
+		card?.querySelectorAll(`[data-inline-toggle="${panel.id}"]`).forEach((button) => syncInlineToggle(button, expanded));
 
 		if (!expanded) {
 			if (sourceButton && panel.contains(sourceButton)) toggle?.focus({ preventScroll: true });
 			requestAnimationFrame(() => {
 				if (card) window.scrollBy(0, card.getBoundingClientRect().top - beforeTop);
+				if (sourceButton && panel.contains(sourceButton) && toggle) scrollElementWithInset(toggle, { block: "nearest", behavior: "auto" });
 			});
 		}
 		if (persist) scheduleNavigationStateWrite();
@@ -569,7 +607,7 @@
 		const accessibleName = `${action}${countCopy} to comment by ${author}`;
 		button.setAttribute("aria-label", accessibleName);
 		button.title = `${action} replies`;
-		if (label) label.textContent = accessibleName;
+		if (label) label.textContent = `${action}${countCopy}`;
 		if (sync) syncThreadProjection(button.closest("[data-thread-projection]") || document);
 		if (persist) scheduleNavigationStateWrite();
 	};
@@ -705,6 +743,84 @@
 		panel.classList.toggle("is-incomplete", !complete);
 		panel.setAttribute("aria-busy", String(commentSearchState.loading));
 	};
+
+    document.body.classList.add("supports-reading-actions");
+    let readingCurrentId = "";
+    document.addEventListener("click", (event) => {
+        const branch = event.target.closest("[data-watch-branch]");
+        if (branch) {
+            const source = document.querySelector("[data-reading-command]");
+            if (!source) return;
+            const form = document.createElement("form"); form.method = "POST"; form.action = "/reading/watch";
+            for (const [name, value] of Object.entries({post:source.querySelector('[name="post_id"]').value, action:"branch", branch:branch.dataset.watchBranch})) {
+                const field=document.createElement("input"); field.type="hidden"; field.name=name; field.value=value; form.append(field);
+            }
+            document.body.append(form); form.requestSubmit(); return;
+        }
+        const keep = event.target.closest("[data-reading-keep]");
+        if (keep) {
+            const form = document.querySelector("[data-reading-command]");
+            if (!form) return;
+            form.dataset.explicitAnchor = keep.dataset.readingKeep;
+            form.requestSubmit(form.querySelector('button[value="checkpoint"]'));
+            return;
+        }
+        const button = event.target.closest("[data-reading-navigate]");
+        if (!button) return;
+        const mode = document.querySelector("[data-reading-mode]")?.value || "branches";
+        const checkpoint = Number(document.querySelector("[data-reading-checkpoint]")?.dataset.readingCheckpoint || 0);
+        const comments = [...document.querySelectorAll(".comment[data-thread-node-id]")].filter((node) => {
+            if(node.dataset.threadFilterState !== "visible") return false;
+            if (mode === "new") return checkpoint > 0 ? Number(node.dataset.readingCreated) > checkpoint : node.classList.contains("is-comment-new");
+            if (mode === "op") return !!node.querySelector(".comment_author.op");
+            if (mode === "matches") return node.dataset.commentSearchMatch === "true";
+            return node.dataset.threadDepth === "0";
+        });
+        const index = readingNavigationIndex(comments.length, comments.findIndex((node) => node.id === readingCurrentId), Number(button.dataset.readingNavigate));
+        const status = document.querySelector("[data-reading-status]");
+        if (index < 0) { if (status) status.textContent = "No matching loaded comments. More replies may remain."; return; }
+        const comment = comments[index]; readingCurrentId = comment.id;
+        expandCommentSearchPath(comment);
+        document.querySelectorAll('.is-reading-navigation-target').forEach(node=>node.classList.remove('is-reading-navigation-target'));
+        comment.classList.add('is-reading-navigation-target');
+        const panel=document.querySelector('[data-reading-panel]');
+        if(window.matchMedia('(max-width: 1120px)').matches && panel)panel.open=false;
+        button.focus({preventScroll:true});
+        scrollElementWithInset(comment,{block:"start",behavior:"auto"});
+        if (status) status.textContent = `${index + 1} of ${comments.length}`;
+    });
+    document.addEventListener("submit", (event) => {
+        if(event.target.matches("[data-reading-window]")) {
+            const items=[...document.querySelectorAll("article[data-reading-item]")].filter(node=>node.getClientRects().length).slice(0,25).map(node=>JSON.parse(node.dataset.readingItem));
+            event.target.elements.items.value=JSON.stringify(items);return;
+        }
+        if (!event.target.matches("[data-reading-command]")) return;
+        if (!["checkpoint", "caught-up"].includes(event.submitter?.value)) return;
+        event.preventDefault();
+        const form=event.target;
+        if(form.dataset.saving==="true")return;
+        const comments = [...document.querySelectorAll(".comment[data-thread-node-id]")].filter(node=>{const r=node.getBoundingClientRect();return r.width>0&&r.height>0});
+        const explicit=form.dataset.explicitAnchor; delete form.dataset.explicitAnchor;
+        const chosen=readingAnchorChoice(comments.map(node=>({id:node.id,top:node.getBoundingClientRect().top,bottom:node.getBoundingClientRect().bottom})),effectiveTopInset(),window.innerHeight,explicit);
+        const node=chosen?document.getElementById(chosen.id):null;
+        form.elements.anchor.value=node?.id||"post-top";
+        const presentation=captureThreadPresentation();
+        const state={sort:document.querySelector('[data-comment-sort]')?.value||"confidence",offset:explicit?0:Math.max(-100000,Math.min(10000,Math.round((node?.getBoundingClientRect().top||effectiveTopInset())-effectiveTopInset()))),groupStates:(presentation?.groupStates||[]).slice(0,200),commentStates:(presentation?.commentStates||[]).slice(0,1000)};
+        form.elements.resume_state.value=JSON.stringify(state);
+        const body=new URLSearchParams(new FormData(form));body.set("action",event.submitter.value);
+        form.dataset.saving="true";
+        fetch(form.getAttribute("action"),{method:"POST",headers:{Accept:"application/json"},body}).then(async response=>{
+            if(!response.ok||response.redirected)throw new Error(response.status===409?"Your reading place changed in another tab. Reload before saving again.":"Could not keep your place. Try again.");
+            const result=await response.json();form.elements.revision.value=result.revision;
+            form.dataset.resumeState=JSON.stringify(state);form.dataset.resumeAnchor=form.elements.anchor.value;
+            let resume=form.closest('.reading-actions').querySelector('[data-resume-link]');
+            if(!resume){resume=document.createElement('a');resume.dataset.resumeLink='';resume.className='reading-tool-link';resume.textContent='Resume saved place';form.querySelector('.reading-group-label').after(resume);}
+            resume.href=result.url;
+            if(window.matchMedia("(max-width: 1120px)").matches){const panel=document.querySelector("[data-reading-panel]");if(panel)panel.open=false;}
+            showToast("Reading place kept. Resume returns here in the full discussion.");
+        }).catch(error=>showToast(error.message)).finally(()=>{delete form.dataset.saving});
+
+    }, true);
 
 	const expandCommentSearchPath = (comment) => {
 		const projection = threadProjection();
@@ -966,6 +1082,8 @@
 		const requestUrl = new URL(requestPath, window.location.href);
 		requestUrl.searchParams.set("thread_patch", "1");
 		requestUrl.searchParams.set("continuation", button.dataset.threadNodeId);
+		const visit = button.closest("[data-thread-group]")?.dataset.activityVisit;
+		if (visit) requestUrl.searchParams.set("activity_visit", visit);
 		const sort = button.closest("[data-thread-group]")?.dataset.threadSort || document.getElementById("commentSortSelect")?.value;
 		if (sort) requestUrl.searchParams.set("sort", sort);
 		const searchQuery = commentSearchQuery();
@@ -1037,7 +1155,7 @@
 		}
 		const post = focused.closest?.(".post[data-post-id]");
 		if (post) {
-			lastReadingFocus = { kind: "post", id: post.dataset.postId, control: focused.matches("[data-inline-toggle]") ? "inline" : "card" };
+			lastReadingFocus = { kind: "post", id: post.dataset.postId, control: feedFocusControl(focused) };
 			return lastReadingFocus;
 		}
 		if (focused.id) {
@@ -1060,7 +1178,7 @@
 		}
 		if (descriptor.kind === "post") {
 			const post = [...document.querySelectorAll(".post[data-post-id]")].find((element) => element.dataset.postId === descriptor.id);
-			return descriptor.control === "inline" ? post?.querySelector("[data-inline-toggle]") : post;
+			return post?.querySelector(feedFocusSelector(descriptor.control)) || post;
 		}
 		return descriptor.id ? document.getElementById(descriptor.id) : null;
 	};
@@ -1093,6 +1211,7 @@
 		return {
 			activePostId: activeCard?.dataset.postId || document.querySelector(".post.is-keyboard-active[data-post-id]")?.dataset.postId || "",
 			expandedPanels: [...document.querySelectorAll(".post_inline_panel[id]:not([hidden])")].map((panel) => panel.id),
+			expandedGroups: cards.filter((card) => card.querySelector("details[data-content-group][open]")).map((card) => card.dataset.postId),
 		};
 	};
 
@@ -1169,11 +1288,14 @@
 		if (!state) return;
 		const expanded = new Set(state.expandedPanels || []);
 		document.querySelectorAll(".post_inline_panel[id]").forEach((panel) => setInlineState(panel, expanded.has(panel.id), null, false));
+		const groups = new Set(state.expandedGroups || []);
+		document.querySelectorAll("details[data-content-group]").forEach((group) => { group.open = groups.has(group.closest("[data-post-id]")?.dataset.postId); });
 		const card = [...document.querySelectorAll('.post:not(.highlighted)[data-post-id]')].find((candidate) => candidate.dataset.postId === state.activePostId);
 		if (card) setActiveCard(card, false, false, false);
 	};
 
 	const restorePageAnchor = async (anchor, focus) => {
+		if (document.fonts?.ready) await Promise.race([document.fonts.ready, new Promise((resolve) => window.setTimeout(resolve, 750))]);
 		refreshMobileFeedContext?.();
 		await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 		refreshMobileFeedContext?.();
@@ -1226,6 +1348,22 @@
 			writeNavigationState();
 		}
 	};
+
+    const restoreReadingPlace = async () => {
+        if(new URLSearchParams(location.search).get("resume")!=="1")return;
+        const form=document.querySelector('[data-reading-command]');if(!form)return;
+        let state;try{state=JSON.parse(form.dataset.resumeState||"{}")}catch{state={}}
+        applyThreadPresentation(state);
+        const target=document.getElementById(form.dataset.resumeAnchor);
+        if(!target || target.dataset.threadFilterState && target.dataset.threadFilterState!=="visible") {
+            showToast("Your saved comment is unavailable or filtered. The full discussion is still open.","",null,12000);return;
+        }
+        if(target.matches('.comment'))expandCommentSearchPath(target);
+        target.tabIndex=-1;target.classList.add('is-reading-resume');target.focus({preventScroll:true});
+        await restorePageAnchor({kind:"element",id:target.id,offset:state.offset||0},null);
+        showToast("Resumed your saved reading place.");
+        window.setTimeout(()=>target.classList.remove('is-reading-resume'),8000);
+    };
 
 	const feedCards = () => [...document.querySelectorAll('.post:not(.highlighted)[data-post-permalink]')].filter((card) => !card.hidden);
 
@@ -1539,6 +1677,11 @@
 		patchTextElement(current, fresh, ".community-avatar");
 		patchTextElement(current, fresh, ":scope > div > a", ["href"]);
 		patchTextElement(current, fresh, ":scope > div > small");
+		const freshActivity = fresh.querySelector("[data-new-comments]");
+		if (freshActivity) {
+			const metadata = current.querySelector(":scope > div > small");
+			metadata?.replaceChildren(...fresh.querySelector(":scope > div > small").childNodes);
+		}
 		patchTextElement(current, fresh, ":scope > a", ["href"]);
 		patchTextElement(current, fresh, ":scope > span:last-child");
 	};
@@ -1623,6 +1766,15 @@
 		patchTextElement(current, fresh, ".post_title_link", ["href"]);
 		patchTextElement(current, fresh, "[data-post-score-value]");
 		patchTextElement(current, fresh, ".post_comments", ["href", "title", "aria-label"]);
+		patchTextElement(current, fresh, ".preview-discussion", ["href"]);
+		const currentActivity = current.querySelector(".post_comments + [data-new-comments]");
+		const freshActivity = fresh.querySelector(".post_comments + [data-new-comments]");
+		if (currentActivity) {
+			if (freshActivity) currentActivity.replaceWith(freshActivity);
+			else currentActivity.remove();
+		} else if (freshActivity) {
+			current.querySelector(".post_comments")?.after(freshActivity);
+		}
 
 		const currentHideForm = current.querySelector(":scope form[data-hide-form]");
 		const freshHideForm = fresh.querySelector(":scope form[data-hide-form]");
@@ -1775,25 +1927,34 @@
 		}, POSTS_FRAGMENT_TIMEOUT);
 		listingFragmentPromise = (async () => {
 			try {
-				const response = await fetch(window.location.href, {
-					method: "GET",
-					credentials: "same-origin",
-					cache: "no-store",
-					headers: { Accept: "text/html", "X-Vale-Fragment": POSTS_FRAGMENT_VERSION },
-					signal: controller.signal,
-				});
-				if (
-					!response.ok
-					|| response.redirected
-					|| response.headers.get("X-Vale-Fragment") !== POSTS_FRAGMENT_VERSION
-					|| !/^text\/html(?:;|$)/i.test(response.headers.get("content-type") || "")
-				) {
-					throw new Error(`The listing fragment response was rejected (${response.status}).`);
-				}
-				const html = await readBoundedFragment(response, controller.signal);
-				if (performance.now() - startedAt > POSTS_FRAGMENT_TIMEOUT) throw new Error("The listing refresh exceeded its deadline.");
-				if (requestEpoch !== hiddenMutationEpoch || postMutationIds.size) return { stale: true };
-				const fragment = parsePostsFragment(html, environment.renderKind);
+				let requestUrl = window.location.href;
+				const visited = new Set();
+				let fragment;
+				do {
+					if (visited.has(requestUrl)) throw new Error("The listing continuation repeated.");
+					visited.add(requestUrl);
+					const response = await fetch(requestUrl, {
+						method: "GET",
+						credentials: "same-origin",
+						cache: "no-store",
+						headers: { Accept: "text/html", "X-Vale-Fragment": POSTS_FRAGMENT_VERSION },
+						signal: controller.signal,
+					});
+					if (
+						!response.ok
+						|| response.redirected
+						|| response.headers.get("X-Vale-Fragment") !== POSTS_FRAGMENT_VERSION
+						|| !/^text\/html(?:;|$)/i.test(response.headers.get("content-type") || "")
+					) {
+						throw new Error(`The listing fragment response was rejected (${response.status}).`);
+					}
+					const html = await readBoundedFragment(response, controller.signal);
+					if (performance.now() - startedAt > POSTS_FRAGMENT_TIMEOUT) throw new Error("The listing refresh exceeded its deadline.");
+					if (requestEpoch !== hiddenMutationEpoch || postMutationIds.size) return { stale: true };
+					fragment = parsePostsFragment(html, environment.renderKind);
+					const next = fragment.pagination.querySelector(':scope > a[rel="next"]');
+					requestUrl = next ? new URL(next.getAttribute("href"), window.location.href).href : "";
+				} while (emptyListingNeedsContinuation(fragment.visibleCount, fragment.status, Boolean(requestUrl)));
 				if (performance.now() - startedAt > POSTS_FRAGMENT_TIMEOUT) throw new Error("The listing refresh exceeded its deadline.");
 				if (requestEpoch !== hiddenMutationEpoch || postMutationIds.size || !environment.collection.isConnected) return { stale: true };
 				const result = reconcilePostsFragment(fragment, environment);
@@ -2491,7 +2652,7 @@
 		}
 
 		const clickedCard = event.target.closest('.post:not(.highlighted)[data-post-permalink]');
-		if (clickedCard && !clickedCard.hidden) setActiveCard(clickedCard, false, true);
+		if (clickedCard && !clickedCard.hidden) setActiveCard(clickedCard, false, false);
 
 		const shortcutReset = event.target.closest("[data-shortcut-reset]");
 		if (shortcutReset) {
@@ -2656,6 +2817,18 @@
 
 	document.querySelectorAll("[data-inline-toggle]").forEach((button) => syncInlineToggle(button, button.getAttribute("aria-expanded") === "true"));
 
+    const readingPanel=document.querySelector('[data-reading-panel]');
+    if(readingPanel){
+        const compact=window.matchMedia('(max-width: 1120px)');
+        const syncPanel=()=>{
+            const mode=document.querySelector('.reading-mode-field');
+            const destination=compact.matches?readingPanel.querySelector('.reading-options-content'):document.querySelector('[data-reading-mode-slot]');
+            if(mode&&destination)destination.prepend(mode);
+            readingPanel.open=!compact.matches;
+        };syncPanel();compact.addEventListener('change',syncPanel);
+        readingPanel.addEventListener('keydown',event=>{if(event.key==='Escape'&&compact.matches){readingPanel.open=false;readingPanel.querySelector('summary').focus();}});
+    }
+
 	document.body.classList.add("supports-feed-sort-select");
 	setupMobileFeedContext();
 	setupSettingsSaveBar();
@@ -2675,11 +2848,18 @@
 		console.error("Vale could not initialize the normalized thread projection.", error);
 		setThreadStatus("This comment thread could not be initialized safely. Reload before loading more replies.");
 	}
+	document.addEventListener("toggle", (event) => {
+		if (event.target.matches("details[data-content-group]")) scheduleNavigationStateWrite();
+	}, true);
 	document.addEventListener("focusin", () => {
 		captureFocus();
 		scheduleNavigationStateWrite();
 	});
-	window.addEventListener("scroll", scheduleNavigationStateWrite, { passive: true });
+	// Scroll changes only the anchor. Capture it at navigation/pagehide rather
+	// than repeatedly cloning every loaded comment patch while reading.
+	document.addEventListener("visibilitychange", () => {
+		if (document.visibilityState === "hidden") writeNavigationState();
+	});
 	window.addEventListener("hashchange", () => {
 		correctMobileHomeHashTarget();
 		scheduleNavigationStateWrite();
@@ -2755,7 +2935,7 @@
 			})().catch((error) => console.warn("Vale could not finish BFCache reconciliation.", error));
 		}
 	});
-	restoreNavigationState().then(focusSavedReturnTarget).catch((error) => {
+	restoreNavigationState().then(restoreReadingPlace).then(focusSavedReturnTarget).catch((error) => {
 		navigationRestoreInProgress = false;
 		console.warn("Vale could not restore this page’s saved navigation state.", error);
 		setThreadStatus("This page returned without its saved reading position. The current thread remains usable.");

@@ -2,7 +2,7 @@
 {% block title %}NSFW content gated{% endblock %}
 {% block sortstyle %}{% endblock %}
 {% block content %}
-<div id="nsfw_landing">
+<section id="nsfw_landing" class="state-card">
     <h1>
         &#128561;
         {% if res_type == crate::utils::ResourceType::Subreddit %}
@@ -13,7 +13,6 @@
         This post is NSFW!
         {% endif %}
     </h1>
-    <br />
 
     {% if crate::utils::sfw_only() %}
     <p>This Vale instance is SFW-only.</p>
@@ -27,7 +26,7 @@
     </form>
     {% endif %}
     {% endif %}
-</div>
+</section>
 {% endblock %}
 {% block footer %}
 {% endblock %}

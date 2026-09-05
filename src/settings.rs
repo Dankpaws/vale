@@ -925,8 +925,7 @@ mod tests {
 
 		assert!(style.contains("#main-content:focus-visible { outline: 0; }"));
 		assert!(style.contains("outline: 2px solid color-mix(in srgb, var(--focus) 35%, transparent)"));
-		assert!(style.contains(":nth-child(-n+3 of .post:not([hidden]))"));
-		assert!(style.contains("@media (prefers-reduced-transparency: reduce)"));
+		assert!(style.contains(".mobile-feed-context.is-pinned:not([hidden]) { background: var(--shell-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }"));
 		assert!(style.contains(".feed-page.community-page > .community-rail"));
 		assert!(!style.contains("feed-switcher-compact"));
 		assert!(!style.contains("discover-page"));
@@ -971,9 +970,9 @@ mod tests {
 
 		assert!(subscriptions.contains("href=\"/search?scope=all&amp;sort=relevance&amp;type=sr_user\">Find a community</a>"));
 		assert!(interactions.contains("const NAVIGATION_STATE_VERSION = 3;"));
-		assert!(service_worker.contains("const CACHE = \"vale-v76-static\";"));
+		assert!(service_worker.contains("const CACHE = \"vale-v97-static\";"));
 		assert!(service_worker.contains("request.headers.get(\"X-Vale-Fragment\") === \"posts-v1\""));
-		assert!(base.contains("-vale-v60"));
-		assert!(base.contains("-v42"));
+		assert!(base.contains("-vale-v78"));
+		assert!(base.contains("-v55"));
 	}
 }

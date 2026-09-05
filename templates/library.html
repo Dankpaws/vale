@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Reading library · Vale{% endblock %}
+{% block content %}
+<div id="column_one" class="simple-page history-page"><header class="page-hero"><div><span class="eyebrow">KEEP WHAT MATTERS</span><h1>Reading library</h1><p><a href="/reading">Continue reading</a> · <a href="/reading/library?export=json">Export library as JSON</a></p></div></header>
+{% include "reading-nav.html" %}
+<datalist id="library-collections">{% for name in collections %}<option value="{{ name }}">{% endfor %}</datalist>
+{% match selected %}{% when Some with (item) %}
+<h2>{{ item.title }}</h2><p>r/{{ item.community }} · u/{{ item.author }} · Saved {{ item.date() }} ago · <a href="{{ item.link() }}">Open source with context</a></p>
+<p>Retained text is a capture, and may differ from the current source.</p><blockquote class="retained-text">{{ item.body }}</blockquote><details><summary>Captured parent context</summary><div class="retained-text">{{ item.context }}</div></details>
+<form method="POST" action="/reading/library"><input type="hidden" name="id" value="{{ item.id }}"><input type="hidden" name="revision" value="{{ item.revision }}"><label>Collection <input name="collection" list="library-collections" maxlength="80" value="{{ item.collection }}" placeholder="For example, Workshop"></label><label>Your note <textarea name="note" rows="8" maxlength="8192">{{ item.note }}</textarea></label><button name="action" value="annotate">Save note and collection</button></form>
+<form method="POST" action="/reading/library"><input type="hidden" name="id" value="{{ item.id }}"><input type="hidden" name="revision" value="{{ item.revision }}"><button name="action" value="remove">Remove saved item</button></form>
+{% when None %}
+<p>Save individual comments from a discussion. Parent context and your notes stay here independently of followed-discussion observations.</p><form method="GET" action="/reading/library"><label>Search saved text and notes <input type="search" name="q" maxlength="256" value="{{ q }}"></label><label>Collection <select name="collection"><option value="">All collections</option>{% for name in collections %}<option value="{{ name }}" {% if collection.as_str() == name.as_str() %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label><button>Search</button></form>
+{% if items.is_empty() %}<p>No saved items match this view.</p>{% endif %}
+{% for item in items %}<article class="history-item"><div class="history-item-copy"><h2><a href="/reading/library?id={{ item.id }}">{{ item.title }}</a></h2><p>r/{{ item.community }} · u/{{ item.author }}{% if item.collection != "" %} · {{ item.collection }}{% endif %}</p><p class="retained-text">{{ item.body.chars().take(300).collect::<String>() }}</p></div></article>{% endfor %}
+{% if !archive_hits.is_empty() %}<h2>Matches in indexed archives</h2><p>Up to 50 matching captured passages. Index an existing archive from its saved-post page.</p>{% for hit in archive_hits %}<article class="history-item"><div><h3><a href="/saved/{{ hit.archive }}/view.html#{{ hit.source }}">{{ hit.title }}</a></h3><p>{{ hit.excerpt }}</p></div></article>{% endfor %}{% endif %}
+<nav aria-label="Library pages">{% if previous != "" %}<a href="{{ previous }}">Previous</a>{% endif %} {% if next != "" %}<a href="{{ next }}">Next</a>{% endif %}</nav>
+{% endmatch %}</div>
+{% endblock %}

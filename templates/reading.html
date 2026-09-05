@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Continue reading · Vale{% endblock %}
+{% block content %}
+<div id="column_one" class="simple-page history-page">
+ <header class="page-hero"><div><span class="eyebrow">YOUR READING</span><h1>Continue reading</h1><p>Bookmarks, followed discussions, and the places you chose to keep.</p></div></header>
+{% include "reading-nav.html" %}
+{% if !updates.is_empty() %}<section aria-label="Source updates"><h2>Source updates</h2>{% for update in updates %}<p><a href="/reading/sources?feed={{ update.feed }}">{{ update.feed }} · {{ update.count }} unread source entries</a></p>{% endfor %}<p>Newly retained entries stay unread until you mark them read.</p></section>{% endif %}
+ {% if entries.is_empty() %}<section class="empty-feed-state"><strong>Your reading starts here.</strong><p>Bookmark or follow a discussion, or keep your place while reading.</p><a href="/">Browse your feed</a></section>{% endif %}
+ <section class="history-list" aria-label="Your discussions">
+ {% for entry in entries %}
+ <article class="history-item"><div class="history-item-copy"><h2 class="history-heading"><a href="{{ entry.permalink() }}">{{ entry.title }}</a></h2><p class="history-item-meta">r/{{ entry.community }}{% if entry.bookmarked %} · Read later{% endif %}{% if entry.followed %} · <a href="/reading/watch?post={{ entry.post_id }}">Following · Check replies</a>{% endif %}{% if entry.caught_up_at > 0 %} · Checkpoint saved{% endif %}</p>
+ <form method="POST" action="/reading/command"><input type="hidden" name="post_id" value="{{ entry.post_id }}"><input type="hidden" name="title" value="{{ entry.title }}"><input type="hidden" name="community" value="{{ entry.community }}"><input type="hidden" name="revision" value="{{ entry.revision }}"><input type="hidden" name="anchor" value="{{ entry.anchor }}">
+ {% if entry.bookmarked %}<button name="action" value="unbookmark">Remove bookmark</button>{% endif %}
+ {% if entry.followed %}<button name="action" value="unfollow">Stop following</button>{% endif %}
+ <button name="action" value="forget">Forget reading state</button>
+ </form></div></article>
+ {% endfor %}
+ </section>
+</div>
+{% endblock %}

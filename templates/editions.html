@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Catch-up editions · Vale{% endblock %}
+{% block content %}
+<div id="column_one" class="simple-page history-page">
+<header class="page-hero"><div><span class="eyebrow">A FINITE READING WINDOW</span><h1>Catch-up editions</h1><p><a href="/reading">Continue reading</a></p></div></header>
+{% include "reading-nav.html" %}
+{% match selected %}{% when Some with (edition) %}
+<h2>{{ edition.name }} · {{ edition.date() }} ago</h2><p>{{ edition.coverage }}</p><p>{{ edition.minutes }} minute target · {{ edition.items.len() }} posts. {% if edition.complete %}You marked this edition complete.{% else %}Your place is saved at item {{ edition.position + 1 }}.{% endif %}</p>
+<form method="POST" action="/reading/editions"><input type="hidden" name="id" value="{{ edition.id }}"><input type="hidden" name="revision" value="{{ edition.revision }}"><input type="hidden" name="position" value="{{ edition.position }}">{% if edition.complete %}<button name="action" value="reopen">Reopen edition</button>{% else %}<button name="action" value="complete">Mark edition complete</button>{% endif %}</form>
+{% if edition.items.is_empty() %}<p>No eligible posts were captured. Check the coverage note above; this does not mark your feed caught up.</p>{% endif %}
+{% for item in edition.items %}
+<article class="history-item" id="item-{{ loop.index0 }}"><div class="history-item-copy">{% if loop.index0 == edition.position as usize %}<p><strong>Your saved place</strong></p>{% endif %}<h3><a href="/comments/{{ item.id }}">{{ item.title }}</a></h3><p>r/{{ item.community }} · u/{{ item.author }}</p><p>{{ item.excerpt }}</p><form method="POST" action="/reading/editions"><input type="hidden" name="id" value="{{ edition.id }}"><input type="hidden" name="revision" value="{{ edition.revision }}"><input type="hidden" name="position" value="{{ loop.index0 }}"><button name="action" value="place">Keep my place here</button></form></div></article>
+{% endfor %}
+{% when None %}
+<p>Choose one named feed. A saved edition keeps the same posts across devices, even as the live feed changes. Reading time is approximate.</p>
+<form method="POST" action="/reading/editions"><input type="hidden" name="action" value="build"><label>Feed <select name="feed" required>{% for feed in prefs.feed_groups() %}<option value="{{ feed.slug }}">{{ feed.name }}</option>{% endfor %}</select></label><label>Time <select name="minutes"><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="20">20 minutes</option></select></label><button>Create edition</button></form>
+{% for edition in editions %}<article class="history-item"><div><h2><a href="/reading/editions?id={{ edition.id }}#item-{{ edition.position }}">{{ edition.name }} · {{ edition.date() }} ago</a></h2><p>{{ edition.items.len() }} posts{% if edition.complete %} · Complete{% endif %}</p><form method="POST" action="/reading/editions"><input type="hidden" name="id" value="{{ edition.id }}"><input type="hidden" name="revision" value="{{ edition.revision }}"><input type="hidden" name="position" value="{{ edition.position }}"><button name="action" value="forget">Forget edition</button></form></div></article>{% endfor %}
+{% endmatch %}
+</div>
+{% endblock %}

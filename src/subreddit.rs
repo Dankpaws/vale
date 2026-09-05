@@ -76,12 +76,7 @@ pub async fn front_page(req: Request<Body>) -> Result<Response<Body>, String> {
 	if fragment_mode == FragmentMode::Posts {
 		return Ok(listing::fragment_route_rejection("Use a canonical named-feed URL before requesting a fragment."));
 	}
-	let prefs = Preferences::new(&req);
-	let Some(group) = prefs.active_feed_group() else {
-		return Ok(listing::document_response(see_other("/feeds")));
-	};
-	let target = canonical_feed_url(&group.slug, preferred_feed_sort(&prefs.post_sort), req.uri().query());
-	Ok(listing::document_response(see_other(&target)))
+	community(req).await
 }
 
 pub async fn feed_without_sort(req: Request<Body>) -> Result<Response<Body>, String> {
@@ -142,12 +137,19 @@ pub async fn community(req: Request<Body>) -> Result<Response<Body>, String> {
 		Err(response) => return Ok(response),
 	};
 	let requested_feed = req.param("feed");
-	let front_page_request = requested_feed.is_some();
+	let root_request = req.uri().path() == "/";
+	let front_page_request = root_request || requested_feed.is_some();
 	let query = listing_query(req.uri().query().unwrap_or_default());
 	let mut prefs = Preferences::new(&req);
 	let front_page = prefs.front_page.clone();
 	let feed_groups = prefs.feed_groups();
-	let active_group = if let Some(feed_slug) = requested_feed.as_deref() {
+	let active_group = if root_request {
+		feed_groups
+			.iter()
+			.find(|group| group.slug == prefs.active_feed)
+			.cloned()
+			.or_else(|| feed_groups.first().cloned())
+	} else if let Some(feed_slug) = requested_feed.as_deref() {
 		let Some(group) = feed_groups.iter().find(|group| group.slug == feed_slug).cloned() else {
 			if fragment_mode == FragmentMode::Posts {
 				return Ok(listing::fragment_route_rejection("That named feed no longer exists."));
@@ -159,6 +161,9 @@ pub async fn community(req: Request<Body>) -> Result<Response<Body>, String> {
 	} else {
 		None
 	};
+	if root_request && active_group.is_none() {
+		return Ok(listing::document_response(see_other("/feeds")));
+	}
 	let active_feed = active_group.as_ref().map(|group| group.slug.clone()).unwrap_or_default();
 	let active_feed_name = active_group.as_ref().map(|group| group.name.clone()).unwrap_or_else(|| "My feed".to_string());
 	let active_communities = active_group.as_ref().map(|group| group.communities.clone()).unwrap_or_else(|| prefs.subscriptions.clone());
@@ -321,6 +326,11 @@ pub async fn community(req: Request<Body>) -> Result<Response<Body>, String> {
 
 	let path = format!("/r/{}/{sort}.json?{query}{params}", sub_name.replace('+', "%2B"));
 	let url = String::from(req.uri().path_and_query().map_or("", |val| val.as_str()));
+	let listing_url = if root_request {
+		canonical_feed_url(&active_feed, &sort, req.uri().query())
+	} else {
+		url.clone()
+	};
 	let redirect_url = url[1..].replace('?', "%3F").replace('&', "%26").replace('+', "%2B");
 	let filters = get_filters(&req);
 
@@ -374,9 +384,19 @@ pub async fn community(req: Request<Body>) -> Result<Response<Body>, String> {
 			}
 		};
 		match listing::accumulate(&path, quarantined, policy).await {
-			Ok(result) => {
-				let previous_url = result.previous_url(&url);
-				let next_url = result.next_url(&url);
+			Ok(mut result) => {
+				crate::activity::annotate(&req, &mut result.posts)?;
+				if front_page_request {
+					if let Some(context) = account::context(&req) {
+						if active_group.is_some() {
+							crate::sources::observe(&account::open_database()?, context.profile_id, &active_feed, &result.posts, account::now()).map_err(|e| format!("{e:?}"))?;
+						}
+						let items = result.posts.iter().map(crate::editions::Item::from_post).collect::<Vec<_>>();
+						let _ = crate::agenda::observe(&account::open_database()?, context.profile_id, &active_feed, &items, account::now());
+					}
+				}
+				let previous_url = result.previous_url(&listing_url);
+				let next_url = result.next_url(&listing_url);
 				let all_posts_filtered = result.all_posts_filtered();
 				let all_posts_hidden_nsfw = result.all_posts_hidden_nsfw();
 				let no_posts = result.no_posts();
@@ -1052,11 +1072,22 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn legacy_feed_entries_redirect_to_canonical_paths() {
-		let root = front_page(route_request("/", &[])).await.unwrap();
-		assert_eq!(root.status(), StatusCode::SEE_OTHER);
-		assert_eq!(root.headers()[header::LOCATION], "/f/ai-homelab/new");
+	async fn root_renders_the_active_feed_and_legacy_entries_still_redirect() {
+		let mut request = route_request("/", &[]);
+		let cookies = request.headers()[header::COOKIE].to_str().unwrap().to_string();
+		request.headers_mut().insert(header::COOKIE, format!("{cookies}; filters=homelab").parse().unwrap());
+		let root = front_page(request).await.unwrap();
+		assert_eq!(root.status(), StatusCode::OK);
+		assert!(root.headers().get(header::LOCATION).is_none());
 		assert_private_variant(&root);
+		let body = String::from_utf8(to_bytes(root.into_body()).await.unwrap().to_vec()).unwrap();
+		assert!(body.contains("/f/ai-homelab/new"));
+		assert!(body.contains("aria-label=\"Vale home\" aria-current=\"page\""));
+
+		let without_feeds = front_page(Request::builder().uri("/").body(Body::empty()).unwrap()).await.unwrap();
+		assert_eq!(without_feeds.status(), StatusCode::SEE_OTHER);
+		assert_eq!(without_feeds.headers()[header::LOCATION], "/feeds");
+		assert_private_variant(&without_feeds);
 
 		let without_sort = feed_without_sort(route_request("/f/anime-news", &[("feed", "anime-news")])).await.unwrap();
 		assert_eq!(without_sort.status(), StatusCode::SEE_OTHER);
@@ -1169,5 +1200,70 @@ mod tests {
 		assert!(chunks.iter().all(|chunk| chunk.len() <= 4_000));
 		assert_eq!(chunks.concat(), values.join("+"));
 		assert_eq!(join_until_size_limit::<String>(&[]), vec![String::new()]);
+	}
+}
+
+#[cfg(test)]
+mod reading_fixture_tests {
+	use super::*;
+	#[tokio::test]
+	async fn reading_feed_fixture() {
+		for theme in ["dark", "light"] {
+			let groups = crate::reading_fixtures::feeds();
+			let html = SubredditTemplate {
+				sub: Subreddit::default(),
+				posts: crate::reading_fixtures::posts().await,
+				sort: ("hot".into(), "day".into()),
+				previous_url: String::new(),
+				next_url: String::new(),
+				prefs: crate::reading_fixtures::preferences(theme),
+				url: "/f/field-notes/hot".into(),
+				redirect_url: String::new(),
+				is_filtered: false,
+				all_posts_filtered: false,
+				all_posts_hidden_nsfw: false,
+				no_posts: false,
+				listing_status: "complete".into(),
+				visible_count: 8,
+				active_feed: "field-notes".into(),
+				active_feed_name: "Field notes".into(),
+				active_communities: groups[0].communities.clone(),
+				feed_groups: groups,
+			}
+			.render()
+			.unwrap();
+			assert!(html.contains("href=\"/r/woodworking/comments/post0/discussion/\""));
+			assert!(html.contains("href=\"/r/woodworking/comments/post0/discussion/#comments\""));
+			assert!(html.contains("class=\"preview-footer\""));
+			assert!(html.contains("<button type=\"button\" class=\"post_thumbnail\" data-inline-toggle=\"inline-post-post2\""));
+			assert!(html.contains("data-inline-toggle=\"inline-post-post0\""));
+			assert!(html.contains("data-src=\"/scenes/vale-light.webp\""));
+			crate::reading_fixtures::export(theme, "feed.html", &html);
+		}
+	}
+}
+
+#[cfg(test)]
+mod wiki_surface_fixture_tests {
+	use super::*;
+	#[test]
+	fn wiki_surface_fixture() {
+		for theme in ["dark", "light"] {
+			let html = WikiTemplate { sub: "woodworking".into(), page: "Getting started".into(), wiki: "<h2>Welcome to the workshop</h2><p>Start with a clear surface, good light, and enough room to work. This guide collects the community’s most useful advice.</p><h2>Choosing tools</h2><p>Choose tools for the work you actually do. Learn their limits and take care of them.</p><pre>A deliberately long line should scroll inside its own code block rather than widening the whole page.</pre>".into(),
+                prefs: crate::reading_fixtures::preferences(theme), url: "/r/woodworking/wiki/index".into() }.render().unwrap();
+			assert!(html.contains("Community pages"));
+			assert!(html.contains("Welcome to the workshop"));
+			crate::reading_fixtures::export(theme, "wiki.html", &html);
+			let wall = WallTemplate {
+				title: "Community notice".into(),
+				sub: "review-community".into(),
+				msg: "This community requires an explicit choice before continuing.".into(),
+				prefs: crate::reading_fixtures::preferences(theme),
+				url: "/r/review-community".into(),
+			}
+			.render()
+			.unwrap();
+			crate::reading_fixtures::export(theme, "wall.html", &wall);
+		}
 	}
 }

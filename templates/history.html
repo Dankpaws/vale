@@ -7,7 +7,7 @@
 	<header class="page-hero history-hero">
 		<div><span class="eyebrow">YOUR PROFILE</span><h1>Reading history</h1><p>Posts you opened inside Vale, synchronized across your signed-in devices.</p></div>
 		{% if !entries.is_empty() %}
-		<form action="/history/clear" method="POST"><button class="quiet-button danger-button" onclick="return confirm('Clear this profile’s entire reading history?')">Clear history</button></form>
+		<form action="/history/clear" method="POST"><button class="quiet-button danger-button" onclick="return confirm('Clear this profile’s entire reading history and since-last-visit activity?')">Clear history</button></form>
 		{% endif %}
 	</header>
 	{% if entries.is_empty() %}

@@ -119,6 +119,7 @@ const MAX_REQUEST_TARGET_BYTES: usize = 16 * 1024;
 const MAX_COOKIE_HEADER_BYTES: usize = 32 * 1024;
 const MAX_COOKIE_COUNT: usize = 128;
 const MAX_COMPRESSIBLE_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
+const BROTLI_QUALITY: i32 = 5;
 
 type BoxResponse = Pin<Box<dyn Future<Output = Result<Response<Body>, String>> + Send>>;
 
@@ -706,22 +707,16 @@ async fn compress_response(req_headers: &HeaderMap<header::HeaderValue>, res: &m
 		}
 	};
 
-	// Compress!
-	match compress_body(compressor, body_bytes) {
-		Ok(compressed) => {
-			// We get here iff the compression was successful. Replace the body
-			// with the compressed payload, and add the appropriate
-			// Content-Encoding header in the response. Remove any precomputed
-			// Content-Length, as it will no longer be valid.
-			let headers = res.headers_mut();
-			headers.insert(header::CONTENT_ENCODING, compressor.to_string().parse().unwrap());
-			headers.remove(header::CONTENT_LENGTH);
+	// Compression is CPU-bound; keep it off Tokio's request workers.
+	let compressed = tokio::task::spawn_blocking(move || compress_body(compressor, body_bytes))
+		.await
+		.map_err(|e| format!("Compression task failed: {e}"))??;
 
-			*(res.body_mut()) = Body::from(compressed);
-		}
-
-		Err(e) => return Err(e),
-	}
+	// Replace the body with the compressed payload and invalidate its old length.
+	let headers = res.headers_mut();
+	headers.insert(header::CONTENT_ENCODING, compressor.to_string().parse().unwrap());
+	headers.remove(header::CONTENT_LENGTH);
+	*(res.body_mut()) = Body::from(compressed);
 
 	Ok(())
 }
@@ -761,9 +756,10 @@ fn compress_body(compressor: CompressionType, body_bytes: Vec<u8>) -> Result<Vec
 		}
 
 		CompressionType::Brotli => {
-			// We may want to make the compression parameters configurable
-			// in the future. For now, the defaults are sufficient.
-			let brotli_params = BrotliEncoderParams::default();
+			let brotli_params = BrotliEncoderParams {
+				quality: BROTLI_QUALITY,
+				..BrotliEncoderParams::default()
+			};
 
 			let mut compressed = Vec::<u8>::new();
 			match BrotliCompress(&mut reader, &mut compressed, &brotli_params) {
@@ -791,7 +787,6 @@ mod tests {
 	use super::*;
 	use brotli::Decompressor as BrotliDecompressor;
 	use flate2::read::GzDecoder;
-	use futures_lite::future::block_on;
 	use std::{boxed::Box, io};
 
 	#[test]
@@ -811,8 +806,8 @@ mod tests {
 		assert_eq!(determine_compressor("gzip;q=NAN".to_string()), None);
 	}
 
-	#[test]
-	fn test_compress_response() {
+	#[tokio::test]
+	async fn test_compress_response() {
 		// This macro generates an Accept-Encoding header value given any number of
 		// compressors.
 		macro_rules! ae_gen {
@@ -852,7 +847,7 @@ mod tests {
 				.unwrap();
 
 			// Perform the compression.
-			if let Err(e) = block_on(compress_response(&req_headers, &mut res)) {
+			if let Err(e) = compress_response(&req_headers, &mut res).await {
 				panic!("compress_response(&req_headers, &mut res) => Err(\"{e}\")");
 			};
 
@@ -873,7 +868,7 @@ mod tests {
 			//
 			// In the case of no compression, just make sure the "new" body in
 			// the Response is the same as what with which we start.
-			let body_vec = match block_on(body::to_bytes(res.body_mut())) {
+			let body_vec = match body::to_bytes(res.body_mut()).await {
 				Ok(b) => b.to_vec(),
 				Err(e) => panic!("{e}"),
 			};
@@ -905,13 +900,13 @@ mod tests {
 		}
 	}
 
-	#[test]
-	fn streaming_responses_are_not_buffered_for_compression() {
+	#[tokio::test]
+	async fn streaming_responses_are_not_buffered_for_compression() {
 		let mut req_headers = HeaderMap::new();
 		req_headers.insert(header::ACCEPT_ENCODING, header::HeaderValue::from_static("gzip"));
 		let stream = futures_lite::stream::once(Ok::<_, io::Error>("streamed text"));
 		let mut response = Response::builder().header(header::CONTENT_TYPE, "text/plain").body(Body::wrap_stream(stream)).unwrap();
-		block_on(compress_response(&req_headers, &mut response)).unwrap();
+		compress_response(&req_headers, &mut response).await.unwrap();
 		assert!(!response.headers().contains_key(header::CONTENT_ENCODING));
 	}
 }

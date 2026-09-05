@@ -53,11 +53,12 @@
 	<div id="column_one" class="post-reading">
 		{% call utils::post(post) %}
 
-		<!-- SORT FORM -->
+        <!-- SORT FORM -->
 	       <div
 	        id="comments"
 	        tabindex="-1"
 	        data-thread-post-id="t3_{{ post.id }}"
+	        data-activity-visit="{{ activity.id }}"
 	        data-thread-comment-count="{{ thread_summary.comment_count }}"
 	        data-thread-reported-comment-count="{{ thread_summary.reported_comment_count }}"
 	        data-thread-continuation-count="{{ thread_summary.continuation_count }}"
@@ -75,6 +76,7 @@
 	       >
 	       <div id="commentQueryForms">
 		<form id="sort">
+			{% if activity.id != "" %}<input type="hidden" name="activity_visit" value="{{ activity.id }}">{% endif %}
 			<p id="comment_count">{{post.comments.0}} {% if post.comments.0 == "1" %}comment{% else %}comments{% endif %} <span id="sorted_by">sorted by </span></p>
 			<label class="sr-only" for="commentSortSelect">Sort comments by</label>
 			<select name="sort" title="Sort comments by" id="commentSortSelect" data-comment-sort>
@@ -84,6 +86,7 @@
       </form>
       <!-- SEARCH FORM -->
 	      <form id="comment-search-form" role="search" aria-label="Search comments">
+			{% if activity.id != "" %}<input type="hidden" name="activity_visit" value="{{ activity.id }}">{% endif %}
 	        <label class="sr-only" for="comment-search-input">Search comments</label>
 		        <input id="comment-search-input" class="commentQuery" type="search" name="q" value="{{ comment_query }}" placeholder="Search comments" maxlength="160" enterkeyhint="search" aria-describedby="comment-search-help">
 		        <input type="hidden" name="type" value="comment">
@@ -91,6 +94,12 @@
 	      </form>
 	      </div>
 	      </div>
+		{% if activity.has_previous() %}
+		<p class="comment-activity" data-comment-activity>
+			{% if activity.new_comments > 0 %}<span class="new-comments">+{{ activity.new_comments }} since last visit</span>{% else %}<span>No increase since last visit</span>{% endif %}
+			<span>Last opened {{ activity.previous_label() }}.</span>
+		</p>
+		{% endif %}
 
 		<section class="comment-search-summary{% if !thread_search.coverage_complete %} is-incomplete{% endif %}" data-comment-search-panel aria-labelledby="comment-search-heading" {% if comment_query == "" %}hidden{% endif %}>
 			<div class="comment-search-copy">
@@ -120,15 +129,16 @@
 		</div>
 		{% endif %}
 
+        {% if !sources.is_empty() %}<section class="discussion-sources" aria-label="Original sources"><h2>Original source</h2>{% for source in sources %}<details><summary>{{ source.title }}</summary><p>{{ source.published }}</p><p class="retained-text">{{ source.body }}</p><a href="{{ source.url }}" rel="noreferrer noopener">Read the original</a></details>{% endfor %}<p><a href="/reading/sources">Sources and story evidence</a></p></section>{% endif %}
 		<!-- COMMENTS -->
 		<div class="thread-projection" data-thread-projection>
 		<p class="sr-only" data-thread-status role="status" aria-live="polite"></p>
 		{% for group in comments -%}
-		<div class="thread thread-group" data-thread-group data-thread-group-id="{{ group.id }}" data-thread-post-id="t3_{{ post.id }}" data-thread-sort="{{ sort }}">
+		<div class="thread thread-group" data-thread-group data-thread-group-id="{{ group.id }}" data-thread-post-id="t3_{{ post.id }}" data-thread-sort="{{ sort }}" data-activity-visit="{{ activity.id }}">
 			{% if single_thread %}
-			<p class="thread_nav"><a href="{{ post.permalink }}">View all comments</a></p>
+			<p class="thread_nav"><a href="{{ activity.url(post.permalink) }}">View all comments</a></p>
 			{% if group.root.parent_kind == "t1" %}
-			<p class="thread_nav"><a href="?context=9999">Show parent comments</a></p>
+			<p class="thread_nav"><a href="?context=9999&amp;activity_visit={{ activity.id }}">Show parent comments</a></p>
 			{% endif %}
 			{% endif %}
 
@@ -152,21 +162,54 @@
 	<aside class="reading-tools" aria-label="Reading tools">
 		<div class="reading-tools-inner">
 			<div class="reading-context"><a href="/r/{{ post.community }}">r/{{ post.community }}</a><small>{{ post.domain }}</small></div>
+{% if reading_enabled %}
+        <section class="reading-actions" aria-label="Keep reading" data-reading-checkpoint="{{ reading.caught_up_at }}" data-reading-followed="{{ reading.followed }}">
+ <div data-reading-mode-slot> <div class="reading-mode-field"><label for="reading-mode">Jump through</label><select id="reading-mode" data-reading-mode><option value="branches">Top-level branches</option><option value="new">New replies</option><option value="op">Original poster replies</option><option value="matches">Search matches</option></select></div></div>
+ <div class="reading-navigation" aria-label="Navigate comments"><button type="button" data-reading-navigate="-1">Previous</button><button type="button" data-reading-navigate="1">Next</button></div>
+ <p role="status" data-reading-status></p>
+ <details class="reading-options" data-reading-panel open><summary>Reading options</summary><div class="reading-options-content">
+
+
+        <form method="POST" action="/reading/command" data-reading-command data-resume-state="{{ reading.resume }}" data-resume-anchor="{{ reading.anchor }}">
+          <input type="hidden" name="resume_state" value="">
+          <input type="hidden" name="post_id" value="{{ post.id }}"><input type="hidden" name="title" value="{{ post.title }}"><input type="hidden" name="community" value="{{ post.community }}"><input type="hidden" name="revision" value="{{ reading.revision }}"><input type="hidden" name="return_to" value="{{ url }}"><input type="hidden" name="anchor" value="{{ reading.anchor }}" data-reading-anchor>
+<p class="reading-group-label">Your place</p>        {% if reading.anchor != "" %}<a class="reading-tool-link" data-resume-link href="{{ reading.permalink() }}">Resume saved place</a>{% endif %}
+          <button name="action" value="checkpoint">Keep my place</button><button name="action" value="caught-up">Mark caught up</button>
+<p class="reading-group-label">Discussion</p>          {% if reading.bookmarked %}<button name="action" value="unbookmark">Remove bookmark</button>{% else %}<button name="action" value="bookmark">Read later</button>{% endif %}
+          {% if reading.followed %}<button name="action" value="unfollow">Stop following</button>{% else %}<button name="action" value="follow">Follow discussion</button>{% endif %}
+        </form>
 			<div class="reading-tool reading-save">
-				<strong>Save offline</strong>
+
 				{% if archive_id.is_empty() %}
-				<form action="/posts/{{ post.id }}/archive" method="POST" data-offline-save><button class="quiet-button" type="submit" data-offline-save-submit>Save</button><span class="sr-only" role="status" aria-live="polite" data-offline-save-status></span></form>
+				<form action="/posts/{{ post.id }}/archive" method="POST" data-offline-save><button class="quiet-button" type="submit" data-offline-save-submit>Save offline</button><span class="sr-only" role="status" aria-live="polite" data-offline-save-status></span></form>
 				{% else if archive_status == "failed" %}
-				<form action="/posts/{{ post.id }}/archive" method="POST" data-offline-save><button class="quiet-button" type="submit" data-offline-save-submit>Retry</button><span class="sr-only" role="status" aria-live="polite" data-offline-save-status></span></form>
+				<form action="/posts/{{ post.id }}/archive" method="POST" data-offline-save><button class="quiet-button" type="submit" data-offline-save-submit>Retry offline save</button><span class="sr-only" role="status" aria-live="polite" data-offline-save-status></span></form>
 				{% else %}
-				<a class="quiet-button archive-status status-{{ archive_status }}" href="/saved/{{ archive_id }}" aria-label="{{ archive_status_label }}. Open offline save details.">Details</a>
+				<a class="quiet-button archive-status status-{{ archive_status }}" href="/saved/{{ archive_id }}" aria-label="{{ archive_status_label }}. Open offline save details.">Offline save details</a>
 				{% endif %}
 			</div>
 				<form class="reading-tool-hide-form" action="/posts/{{ post.id }}/{% if post_hidden %}unhide{% else %}hide{% endif %}" method="POST" data-post-page-hide-form>
 					<input type="hidden" name="return_to" value="{{ url }}">
 					<button type="submit" class="reading-tool-button" data-post-page-hide="{{ post.id }}" aria-pressed="{% if post_hidden %}true{% else %}false{% endif %}"><span data-post-page-hide-label>{% if post_hidden %}Hidden{% else %}Hide post{% endif %}</span><small class="sr-only" data-post-page-hide-status>{% if post_hidden %}Press to restore this post to feeds{% else %}Press to remove this post from feeds{% endif %}</small></button>
 				</form>
+<p class="reading-group-label">Go to</p>        <a class="reading-tool-link" href="/reading">Continue reading</a>{% if reading.followed %}<a class="reading-tool-link" href="/reading/watch?post={{ post.id }}">Followed replies</a>{% endif %}
 			<a class="reading-tool-link" href="#comments" data-reading-jump><span data-reading-jump-label>Jump to comments</span><span data-reading-jump-icon aria-hidden="true">↓</span></a>
+ </div></details></section>
+{% else %}			<div class="reading-tool reading-save">
+
+				{% if archive_id.is_empty() %}
+				<form action="/posts/{{ post.id }}/archive" method="POST" data-offline-save><button class="quiet-button" type="submit" data-offline-save-submit>Save offline</button><span class="sr-only" role="status" aria-live="polite" data-offline-save-status></span></form>
+				{% else if archive_status == "failed" %}
+				<form action="/posts/{{ post.id }}/archive" method="POST" data-offline-save><button class="quiet-button" type="submit" data-offline-save-submit>Retry offline save</button><span class="sr-only" role="status" aria-live="polite" data-offline-save-status></span></form>
+				{% else %}
+				<a class="quiet-button archive-status status-{{ archive_status }}" href="/saved/{{ archive_id }}" aria-label="{{ archive_status_label }}. Open offline save details.">Offline save details</a>
+				{% endif %}
+			</div>
+				<form class="reading-tool-hide-form" action="/posts/{{ post.id }}/{% if post_hidden %}unhide{% else %}hide{% endif %}" method="POST" data-post-page-hide-form>
+					<input type="hidden" name="return_to" value="{{ url }}">
+					<button type="submit" class="reading-tool-button" data-post-page-hide="{{ post.id }}" aria-pressed="{% if post_hidden %}true{% else %}false{% endif %}"><span data-post-page-hide-label>{% if post_hidden %}Hidden{% else %}Hide post{% endif %}</span><small class="sr-only" data-post-page-hide-status>{% if post_hidden %}Press to restore this post to feeds{% else %}Press to remove this post from feeds{% endif %}</small></button>
+				</form>
+			<a class="reading-tool-link" href="#comments" data-reading-jump><span data-reading-jump-label>Jump to comments</span><span data-reading-jump-icon aria-hidden="true">↓</span></a>{% endif %}
 		</div>
 	</aside>
 	</div>

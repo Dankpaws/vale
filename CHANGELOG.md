@@ -6,7 +6,113 @@ called out separately from local regressions.
 
 ## Unreleased
 
-No user-visible changes have been recorded since 0.36.1.
+No changes recorded yet.
+
+## 0.37.0 - 2026-09-04
+
+Vale gains a dedicated Reading workspace: a place to return to discussions,
+finish a finite edition, follow selected sources, and retain useful passages.
+This release also collects the reading, performance, and interface improvements
+made since the August 30 release.
+
+### Added
+
+- **Reading** joins **Feeds / Reading / Saved** in primary navigation, including
+  compact layouts. Read later, discussion follows, and reading checkpoints have
+  their own home, separate from saved offline archives.
+- **Keep my place** records a position inside the full discussion, including
+  comment sort, relative viewport position, and expanded branches. Continue
+  reading restores that context; a bounded recovery request can locate a comment
+  outside the initial batch. Missing or filtered targets receive an explanation.
+- **Jump through** top-level branches, new comments, the original poster's
+  comments, or search matches with Previous/Next. Desktop controls remain in the
+  sticky sidebar; compact layouts keep navigation available while scrolling.
+- **Followed discussions and replies** retain bounded observations of selected
+  threads or branches. The first capture establishes a baseline; edits are not
+  counted as new replies, and absence from a partial capture is not deletion.
+- **Keep this page** saves a stable window of up to 25 rendered feed cards.
+  **Editions** create finite, deduplicated selections from one named feed's recent
+  posts, giving quieter communities space alongside busy ones. Progress,
+  completion, and reopening persist. Optional six-hour or daily schedules can
+  create editions automatically.
+- **Reading filters** support feed-scoped or global domain, flair, title phrase,
+  and post-type rules, hide/only modes, temporary snoozes, and explicit episode
+  boundaries for recognized season/episode labels.
+- **Saved comments** retain original and parent context, editable notes, and
+  collections. Search saved text and notes, explicitly index saved archives, and
+  export retained material as JSON.
+- **Encrypted device offline packs** hold explicitly selected editions, comments,
+  or archives, with optional media. The offline PWA opens a locked reader;
+  passphrase-protected packs support encrypted export/import. Queued notes and
+  reading progress synchronize explicitly, with conflict review instead of
+  silently overwriting newer server state.
+- **Sources** follow selected RSS/Atom feeds inside a named feed. Initial capture,
+  manual and periodic refresh, publication ordering, unread state, and explicit
+  mark-read actions make updates actionable. Exact-URL matches connect source
+  entries to observed Reddit discussions in the same feed.
+- **Stories** organize retained passages, dated evidence, personal assessments,
+  and stages from watching through resolved. Add source entries directly, link
+  related same-feed material, and undo associations. Source counts describe the
+  retained evidence; they do not claim consensus.
+- **Topic watches** track chosen title phrases in observed posts within a named
+  feed, with snooze and acknowledgment controls.
+- Profile-isolation, revision-conflict, input-boundary, offline, migration, and
+  browser regression coverage, plus synthetic reading-layout fixtures.
+
+### Changed
+
+- Refined the feed → inline preview → discussion → Back loop: complete titles,
+  quieter metadata, adjacent reading actions, preview-footer navigation, larger
+  actionable thumbnails, and restoration of the exact reading control.
+- Aligned community, author, search, related-discussion, wiki, Saved, History,
+  settings, and authentication surfaces with the reading layout. Responsive
+  widths, solid surfaces, touch-sized controls, and keyboard disclosures keep
+  desktop and mobile behavior consistent.
+- Organized the discussion sidebar around navigation, Your place, Discussion,
+  and Go to, with consistent flat action rows and concise navigation feedback.
+- Added profile-owned comment activity: positive net growth since the previous
+  discussion visit and a subtle highlight for comments created since then.
+  First visits establish a baseline; counts never display negative growth.
+- Serve the selected feed directly at the home URL, avoiding an extra redirect.
+- Batch grouped-community listing retrieval into a bounded upstream request.
+- Move buffered response compression and CPU-heavy archive/gallery preparation
+  off asynchronous request workers. Explicit archive jobs use a separate bounded
+  worker; Linux lowers its scheduling priority. Brotli uses explicit quality 5.
+- Initialize SQLite WAL at startup, use direct hidden-post lookups, and keep the
+  process-liveness endpoint free of database work.
+- Tear down closed media previews and restore playback position when reopened.
+  Capture navigation state at meaningful events instead of serializing it on
+  every scroll. Remove decorative backdrop filters from reading surfaces.
+
+### Fixed
+
+- Hidden-post replenishment now follows safe continuation cursors across empty
+  listing windows instead of stopping after the first four upstream pages.
+- Long community About content stays scrollable inside the sticky desktop rail,
+  including short viewports and keyboard navigation.
+- Cached immutable PWA assets no longer trigger redundant network refreshes.
+  Precache URLs match the versioned assets actually requested by pages.
+- Separate comment and reply disclosures preserve thread context and focus;
+  narrow-screen reading controls reflow without horizontal overflow.
+- Native form submissions work with a same-origin referrer policy while retaining
+  CSRF checks and excluding referrers on cross-origin requests.
+- Remove the initial “Navigation covers loaded comments” block from the reading
+  toolbar; meaningful position feedback appears after navigation.
+
+### Scope and upgrade notes
+
+- Reading features use server-backed profiles. Back up the profile database and
+  archives before upgrading; startup adds the new tables. Preserve a matching
+  pre-upgrade backup if a downgrade is needed.
+- An edition is a saved selection of post cards, not an automatic archive of its
+  threads or media. Choose an offline pack explicitly for disconnected reading.
+  The 5/10/20-minute edition choices are approximate size presets, not measured
+  reading-time guarantees.
+- Observations and navigation cover bounded, retrieved content. Topic watches
+  are not exhaustive Reddit monitoring; source links use exact URLs rather than
+  fuzzy matching. Sources can only retrieve permitted public HTTP(S) endpoints.
+- AI summarization and LLM integration are intentionally deferred. Stories and
+  assessments remain reader-curated.
 
 ## 0.36.1 - 2026-08-30
 

@@ -31,6 +31,7 @@
 		<div><dt>Stored size</dt><dd>{{ entry.total_size }}</dd></div>
 	</dl>
 	<div class="saved-detail-actions">
+		<form method="POST" action="/saved/{{ entry.id }}/index"><button>Include archive text in library search</button></form>
 		<a class="primary-button" href="/saved/{{ entry.id }}/view.html">Read local snapshot</a>
 		<a class="quiet-button" href="/saved/{{ entry.id }}/manifest.json">Inspect manifest</a>
 		{% if !entry.permalink.is_empty() %}<a class="quiet-button" href="{{ entry.permalink }}">Open current Vale post</a>{% endif %}
