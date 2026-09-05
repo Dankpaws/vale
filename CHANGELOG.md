@@ -99,6 +99,10 @@ made since the August 30 release.
 - Remove the initial “Navigation covers loaded comments” block from the reading
   toolbar; meaningful position feedback appears after navigation.
 
+- Use Debian's official HTTPS security origin in the container builder to avoid
+  false CDN 404 responses for encoded package-version URLs. Package signature
+  and checksum verification remain enabled.
+
 ### Scope and upgrade notes
 
 - Reading features use server-backed profiles. Back up the profile database and

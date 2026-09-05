@@ -15,7 +15,10 @@ ARG RUST_VERSION
 ARG VALE_BUILD_COMMIT=dev
 ENV RUSTUP_TOOLCHAIN=${RUST_VERSION}
 
-RUN apt-get update \
+# Use the security origin directly: the CDN can cache a false 404 for APT's
+# percent-encoded package versions. APT still verifies signed indexes/hashes.
+RUN sed -i 's|http://deb.debian.org/debian-security|https://security.debian.org/debian-security|g' /etc/apt/sources.list \
+    && apt-get update \
     && apt-get install --no-install-recommends --yes \
         ca-certificates \
         binutils \
