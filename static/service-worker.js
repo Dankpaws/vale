@@ -1,4 +1,4 @@
-const CACHE = "vale-v114-static";
+const CACHE = "vale-v115-static";
 const STATIC_ASSETS = [
 	"/style.css?v=__VALE_VERSION__-vale-v92",
 	"/vale-interactions.js?v=__VALE_VERSION__-v66",

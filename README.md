@@ -20,21 +20,14 @@ an instance reachable by anyone else.
 > boundary before binding it to a non-loopback address. Never expose a fresh
 > HTTP listener directly to the public internet.
 
-## On the development branch
+## What is new in 0.38.0
 
-Changes since v0.37.0 unify Saved, add a feed-scoped Reading overview and
-precise reply catch-up, and refine search, previews, comment controls, and
-performance. See [Unreleased changes](CHANGELOG.md#unreleased). The installation
-commands below still select the latest tagged binary release, v0.37.0.
-
-## What is new in 0.37.0
-
-The Reading workspace brings full-discussion checkpoints, persistent comment
-navigation, finite feed editions, followed replies, filters, saved-comment notes,
-encrypted device offline packs, RSS/Atom sources, and reader-curated Stories.
-It also includes a refined reading layout and a week of loading, caching, and
-background-work improvements. Read the [changelog](CHANGELOG.md#0370---2026-09-04)
-and [Reading guide](docs/USAGE.md#reading) for details and practical limits.
+Saved brings posts, comments, notes, collections, and permanent copies into one
+workspace. Reading opens a feed-scoped overview with kept places and precise
+reply catch-up. Contextual search, stable inline previews, compact comment
+controls, and performance improvements refine everyday reading. Read the
+[changelog](CHANGELOG.md#0380---2026-09-13) and
+[Reading guide](docs/USAGE.md#reading) for details and upgrade notes.
 
 ## Choose an installation path
 
@@ -60,7 +53,7 @@ installs the systemd unit, and waits for the health check:
 ```sh
 git clone https://github.com/Dankpaws/vale.git
 cd vale
-git checkout v0.37.0
+git checkout v0.38.0
 sudo ./install.sh
 ```
 

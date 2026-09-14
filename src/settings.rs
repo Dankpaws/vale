@@ -975,7 +975,7 @@ mod tests {
 
 		assert!(subscriptions.contains("href=\"/search?scope=all&amp;sort=relevance&amp;type=sr_user\">Find a community</a>"));
 		assert!(interactions.contains("const NAVIGATION_STATE_VERSION = 3;"));
-		assert!(service_worker.contains("const CACHE = \"vale-v114-static\";"));
+		assert!(service_worker.contains("const CACHE = \"vale-v115-static\";"));
 		assert!(service_worker.contains("request.headers.get(\"X-Vale-Fragment\") === \"posts-v1\""));
 		assert!(base.contains("-vale-v92"));
 		assert!(base.contains("-v66"));

@@ -6,6 +6,12 @@ called out separately from local regressions.
 
 ## Unreleased
 
+## 0.38.0 - 2026-09-13
+
+Vale brings saved material into one workspace and makes Reading a quieter
+feed-scoped overview. This release collects the interface, comment controls,
+and performance improvements since v0.37.0.
+
 ### Reading and Saved
 
 - Unify saved posts, comments, notes, collections, and permanent copies in
@@ -33,7 +39,6 @@ called out separately from local regressions.
 
 ### Performance and comment controls
 
-
 - Reduce work during comment collapse, reply reveal, reading-position capture, scrolling, and mobile Settings; avoid unused offline image copies.
 - Load exact grouped discussions in bounded parallel batches while preserving source order and validation; reduce repeated preview URL scans.
 - Batch topic-watch persistence, skip capture for unfollowed discussions, and stop cancelled or timed-out FFmpeg remux processes.
@@ -54,8 +59,8 @@ called out separately from local regressions.
   record explicit finish state, place time, successful follow checks, and reply
   acknowledgements. Existing timestamps are not backfilled as proof of intent
   or successful retrieval; existing saved items, notes, and copies are retained.
-- These changes are on the development branch; v0.37.0 remains the latest
-  tagged binary release.
+- Reddit retrieval remains unofficial and can be rate-limited or incomplete.
+  Followed-reply counts describe captured observations, not exhaustive coverage.
 
 ## 0.37.0 - 2026-09-04
 
