@@ -75,6 +75,10 @@ changes, publish only an immutable tag/digest built from the exact public tag,
 attest it, and verify that its OCI source label and bundled `SOURCE_OFFER.txt`
 identify the exact corresponding source before announcement.
 
+The builder uses [APT’s native mirror transport](https://manpages.debian.org/bullseye/apt/apt-transport-mirror.1.en.html)
+to fall back between the two official Debian security mirrors when a package
+download fails; signed indexes and package hashes remain mandatory.
+
 The Dockerfile pins its Debian and Rust base-image digests, but Debian packages
 installed from the distribution repositories and the optional host FFmpeg
 package are resolved at build/install time. Record the resolved package/SBOM

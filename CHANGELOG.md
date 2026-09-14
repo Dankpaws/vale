@@ -53,6 +53,12 @@ and performance improvements since v0.37.0.
 - Exclude top-level continuation placeholders from saved checkpoint disclosure
   state while retaining actual comment expansion and collapse state.
 
+### Packaging
+
+- Use APT’s native fallback between two official Debian security mirrors when
+  one returns a stale package-download 404. Signature and package-hash checks
+  remain enforced.
+
 ### Upgrade notes
 
 - Back up profile state before upgrading. Four additive default-zero fields
