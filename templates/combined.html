@@ -18,7 +18,7 @@
 			<article>
 				<span class="community-avatar" aria-hidden="true">{{ discussion.community.get(0..1).unwrap_or_default().to_uppercase() }}</span>
 				<div><a href="{{ discussion.activity.url(discussion.permalink) }}">r/{{ discussion.community }} · {{ discussion.title }}</a><small>{{ discussion.score }} points · {{ discussion.comments }} comments{% if discussion.activity.new_comments > 0 %} · <span class="new-comments">+{{ discussion.activity.new_comments }} since last visit</span>{% endif %}</small></div>
-				<a class="quiet-button" href="{{ discussion.activity.url(discussion.permalink) }}#comments">Open</a>
+				<a class="quiet-button" href="{{ discussion.activity.url(discussion.permalink) }}">Open</a>
 			</article>
 			{% endfor %}
 		</div>

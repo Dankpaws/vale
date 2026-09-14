@@ -506,9 +506,20 @@ fn is_public_asset(path: &str) -> bool {
 }
 
 fn is_private_media_asset(path: &str) -> bool {
-	["/img/", "/thumb/", "/emoji/", "/emote/", "/preview/", "/style/", "/static/", "/vid/", "/hls/"]
-		.iter()
-		.any(|prefix| path.starts_with(prefix))
+	[
+		"/reaction/giphy/",
+		"/img/",
+		"/thumb/",
+		"/emoji/",
+		"/emote/",
+		"/preview/",
+		"/style/",
+		"/static/",
+		"/vid/",
+		"/hls/",
+	]
+	.iter()
+	.any(|prefix| path.starts_with(prefix))
 }
 
 pub fn response_cache_control(path: &str) -> Option<&'static str> {

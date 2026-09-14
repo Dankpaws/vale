@@ -1,0 +1,7 @@
+<nav class="reading-sections" aria-label="Saved views">
+<a href="/saved" {% if (url.starts_with("/saved?") && !url.contains("view=")) || url == "/saved" || url.starts_with("/saved?view=all") %}aria-current="page"{% endif %}>All</a>
+<a href="/saved?view=later" {% if url.starts_with("/saved?view=later") %}aria-current="page"{% endif %}>For later</a>
+<a href="/saved?view=comments" {% if url.starts_with("/saved?view=comments") || url.starts_with("/saved/library") %}aria-current="page"{% endif %}>Comments</a>
+<a href="/saved?view=copies" {% if url.starts_with("/saved?view=copies") %}aria-current="page"{% endif %}>Copies</a>
+<details class="editorial-reading-tools"><summary>Saved tools</summary><div><a href="/saved/library">Search retained text</a><a href="/saved/library?export=json">Export notes and comments</a><a href="/offline.html">Device offline packs</a></div></details>
+</nav>

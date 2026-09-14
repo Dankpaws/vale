@@ -69,14 +69,8 @@ static GEO_FILTER_MATCH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"geo_fil
 
 // SERVICES
 pub async fn front_page(req: Request<Body>) -> Result<Response<Body>, String> {
-	let fragment_mode = match listing::fragment_mode(&req) {
-		Ok(mode) => mode,
-		Err(response) => return Ok(response),
-	};
-	if fragment_mode == FragmentMode::Posts {
-		return Ok(listing::fragment_route_rejection("Use a canonical named-feed URL before requesting a fragment."));
-	}
-	community(req).await
+	// Hide/replenishment requires the canonical named-feed route, including after Feed or Hide & return.
+	legacy_front_page(req).await
 }
 
 pub async fn feed_without_sort(req: Request<Body>) -> Result<Response<Body>, String> {
@@ -1072,17 +1066,14 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn root_renders_the_active_feed_and_legacy_entries_still_redirect() {
+	async fn root_and_legacy_entries_resolve_to_canonical_feeds() {
 		let mut request = route_request("/", &[]);
 		let cookies = request.headers()[header::COOKIE].to_str().unwrap().to_string();
 		request.headers_mut().insert(header::COOKIE, format!("{cookies}; filters=homelab").parse().unwrap());
 		let root = front_page(request).await.unwrap();
-		assert_eq!(root.status(), StatusCode::OK);
-		assert!(root.headers().get(header::LOCATION).is_none());
+		assert_eq!(root.status(), StatusCode::SEE_OTHER);
+		assert_eq!(root.headers()[header::LOCATION], "/f/ai-homelab/new");
 		assert_private_variant(&root);
-		let body = String::from_utf8(to_bytes(root.into_body()).await.unwrap().to_vec()).unwrap();
-		assert!(body.contains("/f/ai-homelab/new"));
-		assert!(body.contains("aria-label=\"Vale home\" aria-current=\"page\""));
 
 		let without_feeds = front_page(Request::builder().uri("/").body(Body::empty()).unwrap()).await.unwrap();
 		assert_eq!(without_feeds.status(), StatusCode::SEE_OTHER);
@@ -1140,6 +1131,14 @@ mod tests {
 		assert_eq!(fragment_alias.status(), StatusCode::BAD_REQUEST);
 		assert_private_variant(&fragment_alias);
 		assert!(fragment_alias.headers().get("X-Vale-Fragment").is_none());
+	}
+
+	#[tokio::test]
+	async fn home_resolves_to_active_feed_before_listing_interactions() {
+		let response = front_page(route_request("/?t=week", &[])).await.unwrap();
+		assert_eq!(response.status(), StatusCode::SEE_OTHER);
+		assert_eq!(response.headers()[header::LOCATION], "/f/ai-homelab/new?t=week");
+		assert_private_variant(&response);
 	}
 
 	#[tokio::test]
@@ -1233,9 +1232,11 @@ mod reading_fixture_tests {
 			.render()
 			.unwrap();
 			assert!(html.contains("href=\"/r/woodworking/comments/post0/discussion/\""));
-			assert!(html.contains("href=\"/r/woodworking/comments/post0/discussion/#comments\""));
+			assert!(html.contains("href=\"/r/woodworking/comments/post0/discussion/\""));
 			assert!(html.contains("class=\"preview-footer\""));
-			assert!(html.contains("<button type=\"button\" class=\"post_thumbnail\" data-inline-toggle=\"inline-post-post2\""));
+			assert!(html.contains("<div class=\"post_thumbnail\" aria-hidden=\"true\">"));
+			assert!(html.contains("form=\"hide-post-post2\""));
+			assert_eq!(html.matches("id=\"hide-post-post2\"").count(), 1);
 			assert!(html.contains("data-inline-toggle=\"inline-post-post0\""));
 			assert!(html.contains("data-src=\"/scenes/vale-light.webp\""));
 			crate::reading_fixtures::export(theme, "feed.html", &html);

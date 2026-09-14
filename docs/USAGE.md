@@ -58,22 +58,33 @@ feed** to confirm that only the intended communities appear.
 
 ### Reading
 
-Primary navigation is **Feeds / Reading / Saved**. Reading holds your active
-reading work; Saved holds explicit post archives. These features require a
+Primary navigation is **Feeds / Reading / Saved**. Reading holds your place and followed discussions; Saved holds posts, retained
+comments, notes, collections, and permanent copies. These features require a
 server-backed profile (account or shared-profile mode).
 
-- **Read later** queues a discussion without archiving it. **Keep my place**
+- **Save** adds a post to **Saved → For later**; click **Saved** again to unsave.
+  **Mark finished** removes it from For later while retaining it in All.
+- The sidebar **bookmark icon** (Keep my place)
   saves your current comment, sort, viewport offset, and expanded branches
   without leaving the page. **Continue reading** returns to the full discussion
   and restores that context. If the comment is outside the initial batch, Vale
   tries one bounded context retrieval. Missing or filtered targets are explained.
 - **Follow discussion** or a selected branch to retain reply observations.
-  **Mark caught up** acknowledges the current observation. The first capture is
+  **Mark these replies caught up** on Followed replies acknowledges only that
+  displayed batch. It preserves your place and leaves undisplayed replies and
+  later arrivals unread. The first capture is
   a baseline; edits are not new replies, and partial retrieval cannot establish
   that a missing comment was deleted. Followed replies refresh periodically.
 - **Jump through** chooses branches, new comments, original-poster comments, or
   search matches. Previous/Next remain available in the desktop sticky rail or
   compact reading toolbar. Navigation covers the comments actually loaded.
+
+**Reading → Overview** starts with one recent kept place and up to six updates
+from followed discussions in the selected named feed. Counts respect current
+branches and filters. **Continue** holds older places; **Following** includes
+all follows, including communities no longer assigned to a feed. Failed, partial,
+stale and snoozed checks remain visible as such. Opening Reading does not mark
+replies read. An existing recent unfinished edition may appear below the updates.
 
 #### Editions and saved windows
 
@@ -101,7 +112,7 @@ Acknowledge or snooze matches; this is not an exhaustive Reddit search service.
 #### Saved comments, notes, and offline reading
 
 Save a useful comment with its original and parent context, add your own note,
-and assign a collection. The library searches saved text and notes; archive
+and assign a collection. Saved searches retained text and notes; archive
 indexing is explicit and bounded. JSON export preserves retained material.
 Edits use revisions so stale tabs cannot silently overwrite newer work.
 
@@ -244,11 +255,22 @@ History is retained for 180 days and capped at 5,000 distinct posts. Clear it
 from **History** when you want to remove the profile's reading record. History
 does not mean unread state, and hiding a post does not mark it read.
 
-### Saved / offline archives
+### Saved and permanent copies
 
-On a local post page, choose **Save offline** to queue a profile-owned archive.
+**Saved** has All, For later, Comments, and Copies views. A post with a retained
+copy appears once, with its copy status. Search matches titles, community names,
+retained comments and context, notes, and collections. Lists show 50 items per
+page. **Note & collection** opens the existing annotation editor.
+
+Unsave removes the saved link without deleting an existing permanent copy or
+written note. Comment stars retain their existing Save/Unsave behavior. Copies
+have a separate explicit deletion action. Merely opening an item does not mark
+it finished. Old Read later and library links still resolve to Saved.
+
+On a local post page, choose **Save**, then **Save options → Make a permanent
+copy** to queue a profile-owned archive. Copies can also be made from Saved.
 The background worker captures the post, comments, Reddit JSON, and available
-media. **Saved** displays the capture status:
+media. **Saved → Copies** displays the capture status:
 
 ```mermaid
 stateDiagram-v2
@@ -362,3 +384,20 @@ comments, or media available offline.
   site's own cookies, tracking, or content policy.
 - Reddit can rate-limit or change the unofficial retrieval flow. A Reddit error
   is not proof that your account, archive, or password is broken.
+
+### Quiet comment controls
+
+The star beside a comment saves it to your comment library and confirms the save
+in place. A filled star means the comment is saved; click it again to unsave.
+The saved state remains correct after reloading. The sidebar
+bookmark keeps your reading position; use **Resume saved place** or Reading to
+return there later. Fresh discussion links open at the post title, including
+comment-count links opened in new tabs. Existing browser history continues to
+restore the position of an existing tab.
+
+Supported GIPHY links display inline GIFs through Vale's private media proxy,
+with a source link underneath. Other GIF sites currently remain ordinary links.
+
+In **Settings → Appearance → Reading sidebar**, choose **Left** or **Right** for
+the desktop reading tools. Left is the default. The preference is saved with
+your profile; the compact mobile toolbar stays at the top.

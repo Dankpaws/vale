@@ -187,7 +187,7 @@
 		<ul id="post_links">
 			<li>
 				<a href="{{ post.permalink }}">
-					<span class="desktop_item">perma</span>link
+					Link to this post
 				</a>
 			</li>
 			{% if post.num_duplicates > 0 %}
@@ -217,7 +217,7 @@
 		href="https://reddit.com{{ permalink }}"
 		rel="nofollow"
 		{% endif %}
-	>reddit</a>
+	>View on Reddit</a>
 
 	{% if prefs.disable_visit_reddit_confirmation != "on" %}
 		{% call visit_reddit_confirmation(permalink) %}
@@ -273,13 +273,11 @@
 		{% call video_player(post, "false") %}
 	</div>
 	{% else if post.post_type != "self" %}
-	{% if (prefs.layout == "compact" || prefs.layout == "clean") && (post.post_type == "image" || post.post_type == "gallery" || post.post_type == "video" || post.post_type == "gif") %}
-	<button type="button" class="post_thumbnail" data-inline-toggle="inline-post-{{ post.id }}" aria-controls="inline-post-{{ post.id }}" aria-expanded="false" aria-label="Preview {{ post.post_type }}: {{ post.title }}" data-expand-name="Preview {{ post.post_type }}: {{ post.title }}" data-collapse-name="Close {{ post.post_type }} preview: {{ post.title }}">
-	{% else %}
-	<a class="post_thumbnail" href="{{ post.permalink }}" aria-label="Open post: {{ post.title }}">
-	{% endif %}
+	<div class="post_thumbnail" aria-hidden="true">
 		{% if !post.thumbnail.url.is_empty() && post.thumbnail.width > 0 && post.thumbnail.height > 0 %}
-		<img data-thumbnail-preview loading="lazy" decoding="async" alt="" src="{{ post.thumbnail.url }}" width="160" height="96">
+		{% if post.post_type == "image" && !post.media.srcset.is_empty() %}
+        <img data-thumbnail-preview loading="lazy" decoding="async" alt="" src="{{ post.media.display_url }}" srcset="{{ post.media.srcset }}" sizes="(max-width: 560px) calc(100vw - 52px), 245px" width="{{ post.media.width }}" height="{{ post.media.height }}">
+        {% else %}<img data-thumbnail-preview loading="lazy" decoding="async" alt="" src="{{ post.thumbnail.url }}" width="160" height="96">{% endif %}
 		<span class="post_thumbnail_placeholder" data-thumbnail-placeholder hidden>
 			<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 10.5h32v27H8z"></path><path d="m11 33 9-9 6 6 4-4 7 7"></path><circle cx="31.5" cy="18" r="3"></circle></svg>
 		</span>
@@ -289,7 +287,7 @@
 		</span>
 		{% endif %}
 		<span class="post_thumbnail_label" aria-hidden="true">{% if post.post_type == "link" %}{{ post.domain }}{% else %}{{ post.post_type }}{% endif %}</span>
-	{% if (prefs.layout == "compact" || prefs.layout == "clean") && (post.post_type == "image" || post.post_type == "gallery" || post.post_type == "video" || post.post_type == "gif") %}</button>{% else %}</a>{% endif %}
+	</div>
 	{% endif %}
 	{% call poll(post) %}
 
@@ -315,9 +313,9 @@
 			<span data-inline-label>{% if post.post_type == "gallery" %}Expand images{% else if post.post_type == "image" %}Expand image{% else if post.post_type == "video" %}Play video{% else if post.post_type == "gif" %}Play GIF{% else %}Preview text{% endif %}</span>
 		</button>
 		{% endif %}
-		<a href="{{ post.permalink }}#comments" class="post_comments" title="{{ post.comments.1 }} {% if post.comments.1 == "1" %}comment{% else %}comments{% endif %}" aria-label="Open discussion: {{ post.comments.0 }} {% if post.comments.1 == "1" %}comment{% else %}comments{% endif %} on {{ post.title }}">{{ post.comments.0 }} {% if post.comments.1 == "1" %}comment{% else %}comments{% endif %}</a>
+		<a href="{{ post.permalink }}" class="post_comments" title="{{ post.comments.1 }} {% if post.comments.1 == "1" %}comment{% else %}comments{% endif %}" aria-label="Open discussion: {{ post.comments.0 }} {% if post.comments.1 == "1" %}comment{% else %}comments{% endif %} on {{ post.title }}">{{ post.comments.0 }} {% if post.comments.1 == "1" %}comment{% else %}comments{% endif %}</a>
 		{% if post.new_comments > 0 %}<span class="new-comments" data-new-comments="{{ post.id }}">+{{ post.new_comments }} since last visit</span>{% endif %}
-		<form class="post-hide-form" action="/posts/{{ post.id }}/hide" method="POST" data-hide-form>
+		<form id="hide-post-{{ post.id }}" class="post-hide-form" action="/posts/{{ post.id }}/hide" method="POST" data-hide-form>
 			<input type="hidden" name="return_to" value="{{ url }}">
 			<button type="submit" class="post_hide" data-hide-post="{{ post.id }}" aria-label="Hide post: {{ post.title }}">
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"></path><path d="M10.6 10.7a2 2 0 0 0 2.7 2.7"></path><path d="M9.8 4.2A11.2 11.2 0 0 1 12 4c5.5 0 9 5.4 9 5.4a13.8 13.8 0 0 1-2.1 2.7"></path><path d="M6.6 6.6A15.2 15.2 0 0 0 3 9.4s3.5 5.4 9 5.4a9.8 9.8 0 0 0 3.4-.6"></path></svg>
@@ -343,7 +341,7 @@
 			<div class="content-group-row" data-group-post-id="{{ grouped.id }}">
 				<span class="community-avatar" aria-hidden="true">{{ grouped.community.get(0..1).unwrap_or_default().to_uppercase() }}</span>
 				<div><a href="{{ grouped.permalink }}">r/{{ grouped.community }} · {{ grouped.title }}</a><small>{{ grouped.score }} points · {{ grouped.comments }} comments · {{ grouped.created }}{% if grouped.new_comments > 0 %} · <span class="new-comments" data-new-comments="{{ grouped.id }}">+{{ grouped.new_comments }} since last visit</span>{% endif %}</small></div>
-				<a href="{{ grouped.permalink }}#comments">Discussion</a>
+				<a href="{{ grouped.permalink }}">Discussion</a>
 			</div>
 			{% endfor %}
 			<a class="content-group-comments" data-content-group-combined href="{{ post.combined_url }}"><span aria-hidden="true">↳</span> {% if post.group_comment_overflow > 0 %}Read top comments across the first <span data-content-group-combined-count>{{ post.group_comment_count }}</span> of <span data-content-group-count>{{ post.grouped_posts.len() + 1 }}</span> discussions{% else %}Read top comments across all <span data-content-group-count>{{ post.grouped_posts.len() + 1 }}</span> discussions{% endif %}</a>
@@ -389,8 +387,9 @@
 		<div class="post_inline_text">{{ post.body|safe }}</div>
 		{% endif %}
 		<footer class="preview-footer">
+<button type="submit" form="hide-post-{{ post.id }}" class="post_hide" data-hide-post="{{ post.id }}" aria-label="Hide after reading: {{ post.title }}">Hide</button>
 			<button type="button" class="quiet-button" data-inline-toggle="inline-post-{{ post.id }}" aria-controls="inline-post-{{ post.id }}" aria-expanded="false" data-expand-label="Close preview" data-collapse-label="Close preview" data-collapse-name="Close preview for {{ post.title }}"><span data-inline-label>Close preview</span></button>
-			<a class="preview-discussion" href="{{ post.permalink }}#comments">Read {{ post.comments.0 }} comments <span aria-hidden="true">→</span></a>
+			<a class="preview-discussion" href="{{ post.permalink }}">Read {{ post.comments.0 }} comments <span aria-hidden="true">→</span></a>
 		</footer>
 	</section>
 	{% endif %}

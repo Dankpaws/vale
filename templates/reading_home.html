@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{% if overview %}Reading{% else %}Following{% endif %} · Vale{% endblock %}
+{% block content %}
+<div id="column_one" class="simple-page reading-home">
+<header class="page-hero"><div><h1>{% if overview %}Reading{% else %}Following{% endif %}</h1></div></header>
+{% include "reading-nav.html" %}
+<form class="reading-feed-picker" action="/reading" method="GET">
+{% if !overview %}<input type="hidden" name="list" value="following">{% endif %}
+<label for="reading-feed">Feed</label><select id="reading-feed" name="feed">{% if !overview %}<option value="">All followed discussions</option>{% endif %}{% for group in prefs.feed_groups() %}<option value="{{ group.slug }}" {% if group.slug == feed %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select><button>Show</button>
+{% if prefs.feed_groups().is_empty() %}<a href="/feeds">Manage feeds</a>{% endif %}</form>
+{% match resume %}{% when Some with (entry) %}<section class="reading-resume-row"><div><span class="reading-section-label">Your place</span><h2><a href="{{ entry.permalink() }}">{{ entry.title }}</a></h2><p>r/{{ entry.community }}</p></div><a class="quiet-button" href="{{ entry.permalink() }}">Resume</a></section>{% when None %}{% endmatch %}
+{% if overview %}<h2 class="reading-section-heading">Updates</h2>{% endif %}
+{% if !notice.is_empty() %}<p class="reading-check-notice" role="status">{{ notice }} <a href="/reading?list=following&amp;feed={{ feed }}">Review follows</a></p>{% endif %}
+{% if rows.is_empty() %}<p class="reading-empty">{{ empty_label }}</p>{% endif %}
+<section class="reading-update-list" aria-label="Followed discussion updates">
+{% for row in rows %}<article class="reading-update" data-reading-update="{{ row.entry.post_id }}">
+<p class="reading-update-reason">{% if row.state.snoozed() %}Snoozed{% else if row.state.new_count > 0 %}{{ row.state.new_count }} newly observed {% if row.state.new_count == 1 %}reply{% else %}replies{% endif %}{% else %}Following{% endif %} · r/{{ row.entry.community }}</p>
+<h2><a href="{{ row.replies_url() }}">{{ row.entry.title }}</a></h2>
+<p class="reading-update-meta">{% if row.state.last_success > 0 %}Updated {{ row.state.checked_label() }}{% else %}No successful check recorded{% endif %}{% if !row.state.error.is_empty() && row.state.error != "Awaiting first capture" %} · Update failed{% else if !row.state.complete && row.state.last_success > 0 %} · Partial coverage{% endif %}</p>
+<div class="reading-update-actions"><a class="quiet-button" href="{{ row.replies_url() }}">{% if row.state.new_count > 0 %}Read replies{% else %}Open follow{% endif %}</a></div>
+</article>{% endfor %}</section>
+{% if more %}<p><a href="/reading?list=following&amp;feed={{ feed }}">See all followed discussions</a></p>{% endif %}
+{% match edition %}{% when Some with (item) %}<section class="reading-edition-option"><span class="reading-section-label">Read an edition</span><a href="/reading/editions?id={{ item.id }}#item-{{ item.position }}">{{ item.name }}</a></section>{% when None %}{% endmatch %}
+<nav class="reading-update-actions" aria-label="Following pages">{% if !previous.is_empty() %}<a href="{{ previous }}">Previous</a>{% endif %}{% if !next.is_empty() %}<a href="{{ next }}">Next</a>{% endif %}</nav>
+</div>
+{% endblock %}

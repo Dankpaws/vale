@@ -180,12 +180,83 @@
 		return;
 	}
 
+    // Use the existing feed and community search routes; scope is local to this form.
+    const searchCommunity = window.location.pathname.match(/^\/r\/([a-zA-Z0-9_]+(?:\+[a-zA-Z0-9_]+)*)(?:\/|$)/)?.[1];
+    const communityScope = searchCommunity && !["all", "popular"].includes(searchCommunity.toLowerCase()) ? searchCommunity : "";
+    const searchParams = new URLSearchParams(window.location.search);
+    for (const form of document.querySelectorAll("[data-search-picker]")) {
+        const query = form.querySelector('input[name="q"]');
+        const panel = form.querySelector(".search-scope-picker");
+        const checkbox = panel.querySelector("[data-search-restrict]");
+        const feed = panel.querySelector("[data-search-feed]");
+        const community = panel.querySelector("[data-search-community]");
+        const hint = panel.querySelector("[data-search-scope-hint]");
+        const oldRestriction = form.querySelector(".search-community-scope");
+        if (oldRestriction) oldRestriction.hidden = true;
+        const scopeInput = (name) => {
+            let input = form.querySelector(`input[name="${name}"]`);
+            if (!input) { input = document.createElement("input"); input.type = "hidden"; input.name = name; form.append(input); }
+            return input;
+        };
+        const scope = scopeInput("scope");
+        const feedValue = scopeInput("feed");
+        const restrict = scopeInput("restrict_sr");
+        restrict.type = "hidden";
+        if (searchParams.has("feed") && [...feed.options].some(option => option.value === searchParams.get("feed"))) feed.value = searchParams.get("feed");
+        checkbox.checked = searchParams.get("scope") !== "all";
+        if (communityScope) {
+            community.textContent = `r/${communityScope}`;
+            community.hidden = false;
+            feed.hidden = true;
+            if (/\/search$/.test(window.location.pathname)) checkbox.checked = !!searchParams.get("restrict_sr");
+        } else if (!feed.options.length) {
+            community.textContent = "your feed";
+            community.hidden = false;
+            feed.hidden = true;
+            checkbox.checked = false;
+            checkbox.disabled = true;
+        }
+        if (!communityScope && feed.options.length === 1) {
+            community.textContent = feed.options[0].textContent.trim();
+            community.hidden = false;
+            feed.hidden = true;
+        }
+        const update = () => {
+            const scoped = checkbox.checked;
+            checkbox.setAttribute("aria-label", `Search only ${communityScope ? `r/${communityScope}` : feed.selectedOptions[0]?.textContent.trim() || "your feed"}`);
+            form.action = scoped && communityScope ? `/r/${communityScope}/search` : "/search";
+            scope.value = scoped && !communityScope ? "feed" : "all";
+            scope.disabled = scoped && !!communityScope;
+            feedValue.value = feed.value;
+            feedValue.disabled = !scoped || !!communityScope;
+            restrict.value = "on";
+            restrict.disabled = !scoped || !communityScope;
+            feed.disabled = !scoped;
+            hint.textContent = !scoped ? "Search all Reddit" : communityScope ? `Only posts in r/${communityScope}` : "Only communities in this feed";
+        };
+        query.setAttribute("aria-controls", panel.id);
+        query.setAttribute("aria-expanded", "false");
+        const show = (open) => { panel.hidden = !open; query.setAttribute("aria-expanded", String(open)); };
+        query.addEventListener("focus", () => show(true));
+        query.addEventListener("click", () => show(true));
+        form.addEventListener("focusout", event => { if (!form.contains(event.relatedTarget)) show(false); });
+        document.addEventListener("pointerdown", event => { if (!form.contains(event.target)) show(false); });
+        form.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); query.focus(); show(false); } });
+        checkbox.addEventListener("change", update);
+        feed.addEventListener("change", update);
+        form.addEventListener("submit", update);
+        update();
+    }
+    const mobileSearch = document.querySelector(".header-search-mobile");
+    if (mobileSearch && communityScope) mobileSearch.href = `/r/${communityScope}/search?restrict_sr=on`;
+
 	const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 	const postMutationIds = new Set();
 	const hiddenMutationStates = new Map();
 	const hiddenMutationQueue = new OrderedKeyQueue();
 	const hiddenMutationDrainWaiters = [];
 	const undoStack = [];
+ let undoPlacementId = null;
 	const UNDO_LIMIT = 12;
 	const UNDO_LIFETIME = 120_000;
 	const POSTS_FRAGMENT_VERSION = "posts-v1";
@@ -382,10 +453,16 @@
 		let barHeight = 0;
 		let frame = 0;
 		let needsMeasure = true;
+		let needsDirtyCheck = false;
+		let dirty = false;
 
 		const serialized = () => new URLSearchParams(new FormData(form)).toString();
 		const update = () => {
 			frame = 0;
+			if (needsDirtyCheck) {
+				dirty = serializedFormIsDirty(baseline, serialized());
+				needsDirtyCheck = false;
+			}
 			const mobile = media.matches;
 			if (!mobile) {
 				bar.hidden = true;
@@ -406,7 +483,6 @@
 			bar.style.setProperty("--settings-save-bar-bottom-offset", `${Math.max(0, window.innerHeight - viewportBottom)}px`);
 			const formRect = form.getBoundingClientRect();
 			const saveTop = nativeSave.getBoundingClientRect().top;
-			const dirty = serializedFormIsDirty(baseline, serialized());
 			const active = settingsSaveBarShouldActivate({
 				mobile,
 				dirty,
@@ -429,18 +505,20 @@
 			}
 		};
 
-		const schedule = (remeasure = false) => {
+		const schedule = (remeasure = false, recheck = false) => {
 			needsMeasure ||= remeasure;
+			needsDirtyCheck ||= recheck;
 			if (!frame) frame = requestAnimationFrame(update);
 		};
 
-		refreshSettingsSaveBar = () => schedule(false);
-		form.addEventListener("input", () => schedule(false));
-		form.addEventListener("change", () => schedule(false));
+		refreshSettingsSaveBar = () => schedule(false, true);
+		form.addEventListener("input", refreshSettingsSaveBar);
+		form.addEventListener("change", refreshSettingsSaveBar);
+		form.addEventListener("reset", refreshSettingsSaveBar);
 		window.addEventListener("scroll", () => schedule(false), { passive: true });
 		window.addEventListener("resize", () => schedule(true));
 		window.addEventListener("orientationchange", () => schedule(true));
-		window.addEventListener("pageshow", () => schedule(true));
+		window.addEventListener("pageshow", () => schedule(true, true));
 		window.visualViewport?.addEventListener("resize", () => schedule(true));
 		media.addEventListener?.("change", () => schedule(true));
 
@@ -546,6 +624,7 @@
 	};
 
 	const syncThreadGroup = (group) => {
+		if (!group) return;
 		const nodes = [...group.querySelectorAll(".thread-node[data-thread-node-id]")];
 		const rootId = group.dataset.threadGroupId;
 		const root = nodes.find((node) => node.dataset.threadNodeId === rootId);
@@ -587,7 +666,7 @@
 		const author = button.dataset.commentAuthor || "this author";
 		button.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} comment by ${author}`);
 		button.title = `${expanded ? "Collapse" : "Expand"} this comment`;
-		if (sync) syncThreadProjection(comment.closest("[data-thread-projection]") || document);
+		if (sync) syncThreadGroup(comment.closest("[data-thread-group]"));
 		if (persist) scheduleNavigationStateWrite();
 	};
 
@@ -608,7 +687,7 @@
 		button.setAttribute("aria-label", accessibleName);
 		button.title = `${action} replies`;
 		if (label) label.textContent = `${action}${countCopy}`;
-		if (sync) syncThreadProjection(button.closest("[data-thread-projection]") || document);
+		if (sync) syncThreadGroup(button.closest("[data-thread-group]"));
 		if (persist) scheduleNavigationStateWrite();
 	};
 
@@ -744,6 +823,37 @@
 		panel.setAttribute("aria-busy", String(commentSearchState.loading));
 	};
 
+    document.addEventListener("submit", async (event) => {
+        const form = event.target;
+        if (!form.matches(".save-comment-action")) return;
+        event.preventDefault();
+        const button = form.querySelector("button");
+        if (button.disabled) return;
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        try {
+            const response = await fetch(form.getAttribute("action"), {method: "POST", headers: {Accept: "application/json"}, body: new URLSearchParams(new FormData(form))});
+            if (!response.ok || response.redirected) throw new Error(response.status === 409 ? "This saved comment changed. Reload before trying again." : "Could not update this comment. Please try again.");
+            const result = await response.json();
+            if (!Number.isInteger(result.id) || result.id < 0 || !Number.isInteger(result.revision)) throw new Error("Could not confirm the save. Please try again.");
+            const saved = result.id > 0;
+            form.elements.namedItem("action").value = saved ? "remove" : "capture";
+            form.elements.namedItem("id").value = result.id;
+            form.elements.namedItem("revision").value = result.revision;
+            button.classList.toggle("is-saved", saved);
+            button.title = saved ? "Unsave comment" : "Save comment";
+            button.setAttribute("aria-label", button.title);
+            button.setAttribute("aria-pressed", String(saved));
+            showToast(saved ? "Comment saved." : "Comment unsaved.");
+        } catch (error) {
+            button.disabled = false;
+            showToast(error.message);
+        } finally {
+            button.disabled = false;
+            button.removeAttribute("aria-busy");
+        }
+    }, true);
+
     document.body.classList.add("supports-reading-actions");
     let readingCurrentId = "";
     document.addEventListener("click", (event) => {
@@ -756,14 +866,6 @@
                 const field=document.createElement("input"); field.type="hidden"; field.name=name; field.value=value; form.append(field);
             }
             document.body.append(form); form.requestSubmit(); return;
-        }
-        const keep = event.target.closest("[data-reading-keep]");
-        if (keep) {
-            const form = document.querySelector("[data-reading-command]");
-            if (!form) return;
-            form.dataset.explicitAnchor = keep.dataset.readingKeep;
-            form.requestSubmit(form.querySelector('button[value="checkpoint"]'));
-            return;
         }
         const button = event.target.closest("[data-reading-navigate]");
         if (!button) return;
@@ -795,17 +897,39 @@
             event.target.elements.items.value=JSON.stringify(items);return;
         }
         if (!event.target.matches("[data-reading-command]")) return;
-        if (!["checkpoint", "caught-up"].includes(event.submitter?.value)) return;
+        if (["bookmark", "unbookmark"].includes(event.submitter?.value)) {
+            event.preventDefault();
+            const form=event.target, button=event.submitter;
+            if(form.dataset.saving==="true")return;
+            const body=new URLSearchParams(new FormData(form));body.set("action",button.value);
+            form.dataset.saving="true";button.disabled=true;button.setAttribute("aria-busy","true");
+            fetch(form.getAttribute("action"),{method:"POST",headers:{Accept:"application/json"},body}).then(async response=>{
+                if(!response.ok||response.redirected)throw new Error(response.status===409?"Saved state changed. Reload and try again.":"Could not update Saved. Try again.");
+                const result=await response.json();
+                if(!Number.isInteger(result.revision)||typeof result.bookmarked!=="boolean")throw new Error("Could not confirm Saved. Reload and try again.");
+                form.elements.revision.value=result.revision;
+                document.querySelectorAll('[data-save-post]').forEach(control=>{
+                    control.value=result.bookmarked?"unbookmark":"bookmark";
+                    control.textContent=result.bookmarked?"Saved":"Save";
+                    control.setAttribute("aria-pressed",String(result.bookmarked));
+                    control.setAttribute("aria-label",result.bookmarked?"Unsave post":"Save post");
+                });
+                document.querySelectorAll('[data-save-options]').forEach(options=>{options.hidden=!result.bookmarked;options.open=false;});
+                showToast(result.bookmarked?"Saved.":"Unsaved.");
+            }).catch(error=>showToast(error.message)).finally(()=>{delete form.dataset.saving;button.disabled=false;button.removeAttribute("aria-busy");});
+            return;
+        }
+        if (event.submitter?.value !== "checkpoint") return;
         event.preventDefault();
         const form=event.target;
         if(form.dataset.saving==="true")return;
-        const comments = [...document.querySelectorAll(".comment[data-thread-node-id]")].filter(node=>{const r=node.getBoundingClientRect();return r.width>0&&r.height>0});
+        const comments = [...document.querySelectorAll(".comment[data-thread-node-id]")].map(node=>{const r=node.getBoundingClientRect();return {id:node.id,top:r.top,bottom:r.bottom,width:r.width,height:r.height}}).filter(rect=>rect.width>0&&rect.height>0);
         const explicit=form.dataset.explicitAnchor; delete form.dataset.explicitAnchor;
-        const chosen=readingAnchorChoice(comments.map(node=>({id:node.id,top:node.getBoundingClientRect().top,bottom:node.getBoundingClientRect().bottom})),effectiveTopInset(),window.innerHeight,explicit);
+        const chosen=readingAnchorChoice(comments,effectiveTopInset(),window.innerHeight,explicit);
         const node=chosen?document.getElementById(chosen.id):null;
         form.elements.anchor.value=node?.id||"post-top";
         const presentation=captureThreadPresentation();
-        const state={sort:document.querySelector('[data-comment-sort]')?.value||"confidence",offset:explicit?0:Math.max(-100000,Math.min(10000,Math.round((node?.getBoundingClientRect().top||effectiveTopInset())-effectiveTopInset()))),groupStates:(presentation?.groupStates||[]).slice(0,200),commentStates:(presentation?.commentStates||[]).slice(0,1000)};
+        const state={sort:document.querySelector('[data-comment-sort]')?.value||"confidence",offset:explicit?0:Math.max(-100000,Math.min(10000,Math.round((chosen?.top||effectiveTopInset())-effectiveTopInset()))),groupStates:(presentation?.groupStates||[]).slice(0,200),commentStates:(presentation?.commentStates||[]).slice(0,1000)};
         form.elements.resume_state.value=JSON.stringify(state);
         const body=new URLSearchParams(new FormData(form));body.set("action",event.submitter.value);
         form.dataset.saving="true";
@@ -826,15 +950,16 @@
 		const projection = threadProjection();
 		if (!projection || !comment) return;
 		const group = comment.closest("[data-thread-group]");
+		if (!group) return;
 		const repliesToggle = group?.querySelector("[data-replies-toggle]");
 		if (repliesToggle) setRepliesState(repliesToggle, true, false, false);
-		const pathIds = [...ancestorIds(comment), comment.dataset.threadNodeId];
-		for (const id of pathIds) {
-			const pathComment = threadNodeElements(projection).find((node) => node.classList.contains("comment") && node.dataset.threadNodeId === id);
+		const pathIds = new Set([...ancestorIds(comment), comment.dataset.threadNodeId]);
+		for (const pathComment of threadNodeElements(group)) {
+			if (!pathComment.classList.contains("comment") || !pathIds.has(pathComment.dataset.threadNodeId)) continue;
 			const collapse = pathComment?.querySelector("[data-comment-collapse]");
 			if (collapse) setCommentState(collapse, true, false, false);
 		}
-		syncThreadProjection(projection);
+		syncThreadGroup(group);
 	};
 
 	const activateCommentSearchMatch = (index, { focus = true, scroll = true, announce = true } = {}) => {
@@ -1038,7 +1163,7 @@
 		renumberThreadPreorder();
 		updateThreadSummary();
 		syncKeywordFilter(document.body.classList.contains("comments-show-filtered"), false, false);
-		syncThreadProjection(group.closest("[data-thread-projection]") || document);
+		syncThreadGroup(group);
 		buildThreadModel();
 		recordThreadPatch(requestUrl, patch);
 		const search = syncCommentSearch({ currentId: commentSearchState.currentId });
@@ -1125,16 +1250,21 @@
 	const capturePageAnchor = () => {
 		refreshMobileFeedContext?.();
 		const line = effectiveTopInset();
-		const candidates = [...threadNodeElements(threadProjection() || document), ...document.querySelectorAll(".post[data-post-id]")].filter((element) => {
-			const rect = element.getBoundingClientRect();
-			return rect.width > 0 && rect.height > 0;
-		});
-		const element = candidates.find((candidate) => candidate.getBoundingClientRect().bottom > line) || candidates.at(-1);
+		const candidates = [...threadNodeElements(threadProjection() || document), ...document.querySelectorAll(".post[data-post-id]")];
+		let element = null;
+		let rect = null;
+		for (const candidate of candidates) {
+			const candidateRect = candidate.getBoundingClientRect();
+			if (candidateRect.width <= 0 || candidateRect.height <= 0) continue;
+			element = candidate;
+			rect = candidateRect;
+			if (rect.bottom > line) break;
+		}
 		if (!element) return { kind: "scroll", id: "", offset: 0, scrollY: window.scrollY };
 		return {
 			kind: element.matches(".thread-node") ? "thread" : "post",
 			id: element.dataset.threadNodeId || element.dataset.postId || element.id,
-			offset: Math.round(element.getBoundingClientRect().top - line),
+			offset: Math.round(rect.top - line),
 			scrollY: window.scrollY,
 		};
 	};
@@ -1188,7 +1318,8 @@
 		if (!projection) return null;
 		return {
 			patches: [...appliedThreadPatches.values()],
-			groupStates: [...projection.querySelectorAll("[data-thread-group]")].map((group) => ({
+			// Continuation placeholders have no persistent reply disclosure.
+			groupStates: [...projection.querySelectorAll("[data-thread-group]")].filter((group) => group.dataset.threadGroupId?.startsWith("t1_")).map((group) => ({
 				id: group.dataset.threadGroupId,
 				expanded: group.querySelector("[data-replies-toggle]")?.getAttribute("aria-expanded") !== "false",
 			})),
@@ -1865,7 +1996,7 @@
 
 		const desiredSet = new Set(desiredEntries);
 		for (const child of [...environment.collection.children]) {
-			if (desiredSet.has(child)) continue;
+			if (desiredSet.has(child) || child.matches(".editorial-undo")) continue;
 			destroyCardMedia(cardFromListingEntry(child, environment.renderKind));
 			child.remove();
 		}
@@ -1881,6 +2012,7 @@
 				environment.collection.insertBefore(desired, insertionPoint);
 			}
 		}
+		placeInlineUndo();
 		patchPagination(environment.pagination, fragment.pagination);
 		environment.statusMessage.textContent = fragment.statusMessage.textContent;
 		environment.statusMessage.hidden = fragment.statusMessage.hidden;
@@ -2022,6 +2154,7 @@
 		const label = control.querySelector("[data-reading-jump-label]");
 		const icon = control.querySelector("[data-reading-jump-icon]");
 		let frame = 0;
+		let showingComments = null;
 		const update = () => {
 			frame = 0;
 			const headerHeight = document.querySelector(".app-header")?.getBoundingClientRect().height || 0;
@@ -2029,6 +2162,8 @@
 				? document.querySelector(".reading-tools")?.getBoundingClientRect().height || 0
 				: 0;
 			const inComments = comments.getBoundingClientRect().top <= headerHeight + toolsHeight + 32;
+			if (inComments === showingComments) return;
+			showingComments = inComments;
 			const nextLabel = inComments ? "Jump to post" : "Jump to comments";
 			control.setAttribute("href", inComments ? "#post-top" : "#comments");
 			control.setAttribute("aria-label", nextLabel);
@@ -2371,6 +2506,7 @@
 			const entry = undoStack.shift();
 			if (entry) removeHiddenCardShell(entry.postId);
 		}
+        if (!undoStack.length) document.querySelector(".editorial-undo")?.remove();
 	};
 
 	const pushUndo = (entry) => {
@@ -2392,17 +2528,36 @@
 		if (anchor && Number.isFinite(before)) window.scrollBy(0, anchor.getBoundingClientRect().top - before);
 	};
 
+	const placeInlineUndo = () => {
+        const line = document.querySelector(".editorial-undo");
+        const collection = listingEnvironment()?.collection;
+        if (!line || !collection) return;
+        const next = [...collection.querySelectorAll("article[data-post-id]")].find(card => card.dataset.postId === undoPlacementId && !card.hidden);
+        const entry = next?.closest('.search-result-entry') || next;
+        collection.insertBefore(line, entry || null);
+    };
 	const showUndoToast = (message = "Post hidden.") => {
 		pruneUndoStack();
 		const count = undoStack.length;
-		showToast(message, count ? `Undo${count > 1 ? ` (${count})` : ""}` : "", count ? undoLatest : null, 12_000);
+		if (listingEnvironment()) {
+            let line = document.querySelector(".editorial-undo");
+            if (!line) { line = document.createElement("div"); line.className = "editorial-undo"; listingEnvironment().collection.append(line); }
+            line.replaceChildren();
+            const label = document.createElement("span"); label.setAttribute("role", "status"); label.textContent = message; line.append(label);
+            if(count) { const button = document.createElement("button"); button.type="button"; button.textContent=count>1?`Undo (${count})`:"Undo"; button.addEventListener("click",undoLatest); line.append(button); }
+            else { line.remove(); }
+            placeInlineUndo();
+        } else showToast(message, count ? `Undo${count > 1 ? ` (${count})` : ""}` : "", count ? undoLatest : null, 12_000);
 	};
 
 	async function undoLatest() {
 		pruneUndoStack();
 		const entry = undoStack.pop();
 		if (!entry) return;
-		showToast("Restoring the post…", "", null, 12_000);
+		if (listingEnvironment()) {
+            const line = document.querySelector(".editorial-undo");
+            if (line) { line.textContent = "Restoring the post…"; line.setAttribute("role", "status"); }
+        } else showToast("Restoring the post…", "", null, 12_000);
 		const result = await requestHiddenState(entry.postId, false, true);
 		if (result.ok && result.hidden === false) {
 			const snapshot = await refreshListingAfterMutations("undo");
@@ -2433,6 +2588,7 @@
 			return;
 		}
 		const nextCard = neighboringCard(card);
+        undoPlacementId = nextCard?.dataset.postId || null;
 		const shouldAdvanceFocus = activeCard === card || document.activeElement === sourceButton || card.contains(document.activeElement);
 		pushUndo({ postId, title: card.dataset.postTitle });
 		setCardHidden(card, true);
@@ -2444,6 +2600,7 @@
 			const index = undoStack.findIndex((entry) => entry.postId === postId);
 			if (index >= 0) undoStack.splice(index, 1);
 			restoreCardWithoutJump(card);
+            pruneUndoStack();
 			showToast("Couldn’t hide that post. Its unchanged state was verified.", "", null, 6500);
 		}
 	};

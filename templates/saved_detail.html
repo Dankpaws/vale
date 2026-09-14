@@ -7,7 +7,7 @@
 	<header class="page-hero saved-detail-hero">
 		<div>
 			<span class="archive-status archive-status-{{ entry.status }}">{{ entry.status_label }}</span>
-			<a class="page-back-link" href="/saved#saved-{{ entry.id }}"><span aria-hidden="true">←</span><span>Back to saved posts</span></a>
+			<a class="page-back-link" href="/saved?view=copies"><span aria-hidden="true">←</span><span>Back to Saved</span></a>
 			<h1>{% if entry.title.is_empty() %}Capturing post {{ entry.post_id }}{% else %}{{ entry.title }}{% endif %}</h1>
 			<p>{% if !entry.community.is_empty() %}r/{{ entry.community }} <span aria-hidden="true">·</span> {% endif %}Queued {{ entry.created }}{% if !entry.captured.is_empty() %} <span aria-hidden="true">·</span> captured {{ entry.captured }}{% endif %}</p>
 		</div>
@@ -16,11 +16,11 @@
 	{% if entry.is_pending() %}
 	<section class="capture-progress-card" aria-live="polite">
 		<span class="capture-spinner" aria-hidden="true"></span>
-		<div><strong>{{ entry.status_label }}</strong><p>One bounded worker is collecting the post, expanding available comment branches, and writing local media. This page refreshes automatically.</p></div>
+		<div><strong>{{ entry.status_label }}</strong><p>Collecting the post, comments, and media.</p></div>
 	</section>
 	{% else if entry.status == "failed" %}
 	<section class="capture-error-card">
-		<strong>Nothing incomplete is being presented as an archive.</strong>
+		<strong>Copy failed.</strong>
 		<p>{{ entry.error }}</p>
 		<form action="/posts/{{ entry.post_id }}/archive" method="POST"><button class="primary-button">Retry capture</button></form>
 	</section>
@@ -31,7 +31,7 @@
 		<div><dt>Stored size</dt><dd>{{ entry.total_size }}</dd></div>
 	</dl>
 	<div class="saved-detail-actions">
-		<form method="POST" action="/saved/{{ entry.id }}/index"><button>Include archive text in library search</button></form>
+		<form method="POST" action="/saved/{{ entry.id }}/index"><button>Index copy text for search</button></form>
 		<a class="primary-button" href="/saved/{{ entry.id }}/view.html">Read local snapshot</a>
 		<a class="quiet-button" href="/saved/{{ entry.id }}/manifest.json">Inspect manifest</a>
 		{% if !entry.permalink.is_empty() %}<a class="quiet-button" href="{{ entry.permalink }}">Open current Vale post</a>{% endif %}
@@ -39,7 +39,7 @@
 
 	{% if !entry.issues.is_empty() %}
 	<section class="capture-issues" aria-labelledby="capture-issues-title">
-		<header><span class="eyebrow">CAPTURE REPORT</span><h2 id="capture-issues-title">Documented omissions</h2><p>The saved reader is available, but Vale could not honestly mark this snapshot complete.</p></header>
+		<header><span class="eyebrow">CAPTURE REPORT</span><h2 id="capture-issues-title">Documented omissions</h2><p>This copy is available with the omissions below.</p></header>
 		<ul>{% for issue in entry.issues %}<li><strong>{{ issue.area }}</strong><span>{{ issue.message }}</span></li>{% endfor %}</ul>
 	</section>
 	{% else %}

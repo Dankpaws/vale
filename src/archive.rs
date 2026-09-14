@@ -438,7 +438,7 @@ fn entry_for_profile(profile_id: i64, archive_id: &str) -> Result<Option<Archive
 		.map_err(|error| format!("Unable to read the saved Vale post: {error}"))
 }
 
-fn entry_for_post(connection: &rusqlite::Connection, profile_id: i64, post_id: &str) -> rusqlite::Result<Option<ArchiveEntryView>> {
+pub(crate) fn entry_for_post(connection: &rusqlite::Connection, profile_id: i64, post_id: &str) -> rusqlite::Result<Option<ArchiveEntryView>> {
 	connection
 		.query_row(
 			&format!("SELECT {ENTRY_COLUMNS} FROM post_archives WHERE profile_id = ?1 AND post_id = ?2"),

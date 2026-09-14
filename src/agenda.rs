@@ -77,6 +77,15 @@ pub fn observe(db: &Connection, profile: i64, feed: &str, items: &[crate::editio
 	if items.len() > 25 || now < 0 {
 		return Err(WriteError::Invalid);
 	}
+	if !topics(db, profile)?.iter().any(|topic| topic.feed == feed && topic.until <= now) {
+		return Ok(());
+	}
+	// Feed observations share one durable commit; edition creation already owns one.
+	let transaction = db
+		.is_autocommit()
+		.then(|| rusqlite::Transaction::new_unchecked(db, TransactionBehavior::Immediate))
+		.transpose()?;
+	// Re-read after acquiring the writer: another session may have snoozed a topic.
 	for topic in topics(db, profile)?.into_iter().filter(|t| t.feed == feed && t.until <= now) {
 		for item in items {
 			if item.title.to_lowercase().contains(&topic.phrase) && account::valid_post_id(&item.id) && item.title.len() <= 4000 && item.community.len() <= 80 {
@@ -90,6 +99,9 @@ pub fn observe(db: &Connection, profile: i64, feed: &str, items: &[crate::editio
 			"DELETE FROM reading_topic_matches WHERE topic=?1 AND id NOT IN(SELECT id FROM reading_topic_matches WHERE topic=?1 ORDER BY id DESC LIMIT 500)",
 			[topic.id],
 		)?;
+	}
+	if let Some(transaction) = transaction {
+		transaction.commit()?;
 	}
 	Ok(())
 }
@@ -341,6 +353,67 @@ mod tests {
 			key: String::new(),
 			created: 1000,
 		}
+	}
+	#[test]
+	fn observations_commit_together_and_preserve_an_existing_transaction() {
+		let mut db = db();
+		add_topic(&mut db, 1, "rust", "release").unwrap();
+		let first = item();
+		let mut second = item();
+		second.id = "post2".into();
+		db.execute_batch("CREATE TRIGGER reject_second_match BEFORE INSERT ON reading_topic_matches WHEN new.post='post2' BEGIN SELECT RAISE(ABORT,'synthetic failure'); END;")
+			.unwrap();
+		assert!(observe(&db, 1, "rust", &[first.clone(), second], 1000).is_err());
+		assert!(db.is_autocommit());
+		assert_eq!(db.query_row("SELECT count(*) FROM reading_topic_matches", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+		db.execute_batch("DROP TRIGGER reject_second_match;").unwrap();
+		let transaction = db.transaction().unwrap();
+		observe(&transaction, 1, "rust", std::slice::from_ref(&first), 1000).unwrap();
+		assert!(!transaction.is_autocommit());
+		assert_eq!(transaction.query_row("SELECT count(*) FROM reading_topic_matches", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+		transaction.rollback().unwrap();
+		assert_eq!(db.query_row("SELECT count(*) FROM reading_topic_matches", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+		observe(&db, 1, "rust", &[first], 1000).unwrap();
+		assert!(db.is_autocommit());
+		assert_eq!(db.query_row("SELECT count(*) FROM reading_topic_matches", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+	}
+	#[test]
+	fn observations_skip_snoozed_topics_and_recheck_after_a_competing_writer() {
+		use std::sync::atomic::{AtomicBool, Ordering};
+		use std::time::{Duration, Instant};
+		static WAITING: AtomicBool = AtomicBool::new(false);
+		let path = std::env::temp_dir().join(format!("vale-topic-lock-{}.sqlite3", uuid::Uuid::new_v4()));
+		let mut fixture = db();
+		add_topic(&mut fixture, 1, "rust", "release").unwrap();
+		fixture.execute("VACUUM INTO ?1", [path.to_str().unwrap()]).unwrap();
+		let reader = Connection::open(&path).unwrap();
+		reader.execute_batch("PRAGMA journal_mode=WAL; UPDATE reading_topics SET until_at=2000;").unwrap();
+		reader.busy_timeout(Duration::ZERO).unwrap();
+		let mut writer = Connection::open(&path).unwrap();
+		let transaction = writer.transaction_with_behavior(TransactionBehavior::Immediate).unwrap();
+		observe(&reader, 1, "rust", &[item()], 1000).unwrap();
+		transaction.rollback().unwrap();
+		reader.execute("UPDATE reading_topics SET until_at=0", []).unwrap();
+		let transaction = writer.transaction_with_behavior(TransactionBehavior::Immediate).unwrap();
+		transaction.execute("UPDATE reading_topics SET until_at=2000", []).unwrap();
+		reader
+			.busy_handler(Some(|attempt| {
+				WAITING.store(true, Ordering::Release);
+				std::thread::sleep(Duration::from_millis(1));
+				attempt < 2000
+			}))
+			.unwrap();
+		let observer = std::thread::spawn(move || observe(&reader, 1, "rust", &[item()], 1000));
+		let deadline = Instant::now() + Duration::from_secs(2);
+		while !WAITING.load(Ordering::Acquire) && Instant::now() < deadline {
+			std::thread::sleep(Duration::from_millis(1));
+		}
+		assert!(WAITING.load(Ordering::Acquire), "observer should acquire the writer before reading its snapshot");
+		transaction.commit().unwrap();
+		observer.join().unwrap().unwrap();
+		assert_eq!(writer.query_row("SELECT count(*) FROM reading_topic_matches", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+		drop(writer);
+		std::fs::remove_file(path).unwrap();
 	}
 	#[test]
 	fn stop_schedule_twelve_edges() {

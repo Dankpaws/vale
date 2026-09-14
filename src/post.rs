@@ -298,11 +298,14 @@ pub async fn item(req: Request<Body>) -> Result<Response<Body>, String> {
 				&comment_keywords,
 				&prefs,
 			);
-			crate::watch::observe_request(&req, &post.id, &thread)?;
+			if reading.followed {
+				crate::watch::observe_request(&req, &post.id, &thread)?;
+			}
 			let thread_summary = thread.summary();
 			let filtered_comment_count = thread.filtered_comment_count();
 			let thread_search = thread.search(&query);
 			let mut comments = thread.into_search_projection(&thread_search);
+			crate::library::decorate_comments(&req, &post.id, &mut comments)?;
 			let archive = if thread_patch { None } else { crate::archive::archive_for_post(&req, &post.id)? };
 			let post_hidden = !thread_patch && crate::account::post_is_hidden(&req, &post.id)?;
 			let activity = crate::activity::for_post(&req, &post, thread_patch)?;
@@ -517,7 +520,7 @@ mod reading_fixture_tests {
 			let search = model.search("");
 			let html = PostTemplate {
 				reading: Default::default(),
-				reading_enabled: false,
+				reading_enabled: true,
 				sources: vec![],
 				activity: crate::activity::Visit::default(),
 				comments: model.into_search_projection(&search),

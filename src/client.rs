@@ -165,6 +165,14 @@ pub async fn canonical_path(path: String, tries: i8) -> Result<Option<String>, S
 	}
 }
 
+pub async fn reaction_gif(req: HyperRequest<Body>) -> Result<HyperResponse<Body>, String> {
+	let id = req.param("id").unwrap_or_default();
+	if id.is_empty() || id.len() > 100 || !id.bytes().all(|c| c.is_ascii_alphanumeric()) {
+		return Err("Invalid reaction GIF identity.".into());
+	}
+	proxy(req, "https://media.giphy.com/media/{id}/giphy.gif").await
+}
+
 pub async fn proxy(req: HyperRequest<Body>, format: &str) -> Result<HyperResponse<Body>, String> {
 	let (upstream_query, download_name) = split_proxy_query(req.uri().query().unwrap_or_default());
 	let mut url = if upstream_query.is_empty() {
@@ -179,7 +187,7 @@ pub async fn proxy(req: HyperRequest<Body>, format: &str) -> Result<HyperRespons
 		url = url.replace(&format!("{{{name}}}"), value);
 	}
 
-	// Only the fixed Reddit media hosts used by the route table may be reached.
+	// Only the fixed media hosts used by the route table may be reached.
 	let wreq_uri = validated_proxy_uri(&url)?;
 
 	let mut builder = CLIENT.get(wreq_uri).timeout(MEDIA_PROXY_TIMEOUT);
@@ -271,6 +279,7 @@ fn validated_proxy_uri(value: &str) -> Result<wreq::Uri, String> {
 			| "external-preview.redd.it"
 			| "styles.redditmedia.com"
 			| "www.redditstatic.com"
+			| "media.giphy.com"
 	) {
 		return Err("Vale refused an unrecognized proxied media host.".to_string());
 	}

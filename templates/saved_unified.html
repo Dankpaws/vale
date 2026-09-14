@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Saved · Vale{% endblock %}
+{% block content %}
+<div id="column_one" class="simple-page saved-page saved-unified">
+<header class="page-hero"><div><h1>Saved</h1></div></header>
+{% include "saved-nav.html" %}
+<form class="saved-search" action="/saved" method="GET"><input type="hidden" name="view" value="{{ view }}"><label class="saved-query"><span class="sr-only">Search saved items</span><input name="q" type="search" placeholder="Search saved items" value="{{ q }}" maxlength="256"></label><button>Search</button><label><span class="sr-only">Collection</span><select name="collection" aria-label="Collection"><option value="">All collections</option>{% for name in collections %}<option {% if collection == name.as_str() %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label></form>
+{% if view == "copies" %}<details class="editorial-storage"><summary>{{ quota.used_size }} used of {{ quota.effective_limit_size }} · Storage details</summary><p>{{ quota.reserved_size }} reserved · {{ quota.instance_limit_size }} shared allowance</p><a href="/settings#archive-storage">Manage storage</a></details>{% endif %}
+{% if quota.is_over_budget || quota.instance_exhausted %}<p class="archive-capacity-warning">New copies are paused: storage is full. <a href="/settings#archive-storage">Manage storage</a></p>{% endif %}
+{% if items.is_empty() %}<section class="empty-feed-state"><strong>No saved items in this view.</strong><a href="/">Browse your feed</a></section>{% endif %}
+<section class="saved-list" aria-label="Saved items">
+{% for item in items %}
+<article class="saved-item" data-saved-item="{{ item.post }}">
+<div class="saved-item-copy">
+<p class="saved-item-meta">{% if item.is_comment() %}Comment{% else %}Post{% endif %} · r/{{ item.community }}{% if item.collection() != "" %} · {{ item.collection() }}{% endif %}</p>
+<h2 class="saved-title"><a href="{{ item.link() }}">{% if item.is_comment() %}{% match item.excerpt %}{% when Some with (excerpt) %}{{ excerpt.body.chars().take(140).collect::<String>() }}{% when None %}{% endmatch %}{% else %}{{ item.title }}{% endif %}</a></h2>
+{% match item.excerpt %}{% when Some with (excerpt) %}{% if item.is_comment() %}<p class="saved-item-meta">u/{{ excerpt.author }} · {{ item.title }}</p>{% endif %}{% when None %}{% endmatch %}
+<p class="saved-item-meta">{% if item.reading.bookmarked %}{% if item.reading.finished %}Finished{% else %}For later{% endif %}{% endif %}{% match item.copy %}{% when Some with (copy) %}{% if item.reading.bookmarked %} · {% endif %}{{ copy.status_label }} · {{ copy.total_size }}{% when None %}{% if !item.is_comment() && item.excerpt.is_none() %} · Link{% endif %}{% endmatch %}</p>
+<div class="saved-item-actions">
+{% if item.reading.bookmarked %}<form action="/reading/command" method="POST"><input type="hidden" name="post_id" value="{{ item.post }}"><input type="hidden" name="title" value="{{ item.title }}"><input type="hidden" name="community" value="{{ item.community }}"><input type="hidden" name="revision" value="{{ item.reading.revision }}"><input type="hidden" name="return_to" value="{{ url }}"><button name="action" value="{% if item.reading.finished %}later{% else %}finish{% endif %}">{% if item.reading.finished %}Move to for later{% else %}Mark finished{% endif %}</button><button name="action" value="unbookmark" aria-pressed="true" aria-label="Unsave post">Saved</button></form>{% endif %}
+{% match item.copy %}{% when Some with (copy) %}<a class="quiet-button" href="/saved/{{ copy.id }}">View copy</a>{% when None %}{% if !item.is_comment() %}<form action="/posts/{{ item.post }}/archive" method="POST" data-offline-save><button data-offline-save-submit>Make a permanent copy</button><span class="sr-only" data-offline-save-status role="status"></span></form>{% endif %}{% endmatch %}
+{% match item.excerpt %}{% when Some with (excerpt) %}<a class="quiet-button" href="/saved/library?id={{ excerpt.id }}">Note &amp; collection</a>{% when None %}<form method="POST" action="/saved/library"><input type="hidden" name="action" value="save-post"><input type="hidden" name="post" value="{{ item.post }}"><button>Note &amp; collection</button></form>{% endmatch %}
+</div></div></article>
+{% endfor %}
+</section><nav class="saved-item-actions" aria-label="Saved pages">{% if previous != "" %}<a href="{{ previous }}">Previous</a>{% endif %}{% if next != "" %}<a href="{{ next }}">Next</a>{% endif %}</nav>
+</div>
+{% endblock %}

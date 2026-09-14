@@ -31,8 +31,8 @@ not a general Reddit clone and does not require a Reddit account.
 - `/feeds` manages up to eight named feeds and 32 assigned communities. The
   active feed is device-local; the feed library and profile preferences sync
   for the signed-in account.
-- The Vale brand is the canonical feed-home link. Primary navigation contains
-  Feeds, Reading, Saved, Search, and Account; feed selection stays in the page and theme
+- The Vale brand and Feed navigation resolve `/` to the active canonical named-feed URL, so Hide and Undo refresh through a fragment-eligible route. Primary navigation contains
+  Feed, Reading, Saved, Search, and Account; feed management remains at `/feeds`; feed selection stays in the page and theme
   selection stays in Settings instead of becoming duplicate header controls.
 - Titles open local Vale post pages. Submitted text, images, galleries, GIFs,
   and videos expand in place through one footer control. Thumbnails are inert
@@ -90,7 +90,7 @@ not a general Reddit clone and does not require a Reddit account.
   retain up to 512 visits/24 hours; expired or foreign IDs cannot advance state.
   Clearing history also clears activity. Browser-only profile mode has no
   server-owned activity tracking.
-- Saved creates a profile-owned standalone archive with HTML, Reddit JSON,
+- Make a permanent copy creates a profile-owned standalone archive with HTML, Reddit JSON,
   comments, captured assets, a manifest, byte counts, and SHA-256 checksums.
   Complete, partial, capturing, cleanup, deleting, and failed states remain
   distinct. Reader v3 is script-free, self-contained, dark by default, light
@@ -145,6 +145,17 @@ not a general Reddit clone and does not require a Reddit account.
   external HTML is sanitized and inert. Explicit capture jobs run FIFO on a
   dedicated single-thread runtime with one blocking worker; on Linux, both are
   scheduled at niceness 10 so page-serving work retains interactive priority.
+- Existing reading interactions avoid unrelated work: comment controls update
+  their owning thread group, navigation anchors measure each candidate once,
+  and unchanged scroll frames do not rewrite jump controls or serialize Settings.
+  Combined discussions retrieve at most three sources concurrently, preserve
+  their requested order, and validate all identities before recording visits.
+- Topic observations use one durable transaction, with no writer acquisition
+  for an empty eligible-topic set. Unfollowed discussions skip watch capture;
+  observers recheck follow state after waiting for a writer. Timed-out or
+  cancelled media remuxes terminate their FFmpeg child process.
+- Cancelled Reddit token refreshes release their in-progress flag, allowing
+  later refresh attempts even when another grouped source fails.
 - Vale does not add an external authentication gateway, public registration,
   Reddit credentials, advertising, analytics, tracking, or a public listener
   as part of its reader contract.
@@ -315,3 +326,98 @@ in Reading options. Repeated navigation preserves button focus. The rail groups
 navigation, Your place, Discussion, and Go to with flat left-aligned actions.
 
 AI summarization and LLM integration are deferred; no AI endpoint is included.
+
+## Comment reading refinements
+
+Comment-count and preview-discussion links open the post at its top. Explicit
+comment permalinks and Resume links retain their targets. Back, reload, and
+restored history entries retain the existing browser reading-state recovery;
+fresh feed opens do not automatically resume an older checkpoint.
+
+A quiet outlined star saves a comment without navigating away. Successful saves
+fill the star and announce confirmation; clicking again unsaves it. Saved IDs
+and revisions are loaded once per rendered post, including continuation
+fragments, so reloads and explicit comment pages retain the correct action.
+Failures retain a retryable control. Native form fallback returns to the comment. The persistent
+checkpoint is one bookmark icon in the sticky desktop rail (or the compact
+mobile toolbar), with an accessible name and concise explanation in Reading
+options. Checkpoints still use revision checks and bounded context recovery.
+
+GIPHY GIF page, embed, and supported direct-media links inside comments render
+as lazy inline images with a GIPHY source link. Only validated alphanumeric IDs
+reach the fixed same-origin `/reaction/giphy/:id` proxy; media remains authenticated
+and privately cached. No third-party iframe, script, API key, or browser request
+to GIPHY is introduced. Other reaction sites and unrecognized links remain links.
+
+The Reading sidebar preference chooses Left (default) or Right on desktop and
+persists through the normal profile/cookie and versioned export paths. Mobile
+keeps its compact toolbar. Comment stars occupy a fixed trailing metadata slot;
+the glyph is one text em, with a larger invisible pointer target. Unsave retains
+profile isolation and revision checks from the existing library removal path.
+
+## Contextual search picker
+
+Focusing either the desktop header search or the full search-page query reveals
+an in-form scope picker. The checked default searches the current named feed,
+with a selector when multiple feeds exist, or the current r/community on
+community/discussion routes. Unchecking searches all Reddit. Scope changes are
+local to the search form and use the existing server routes and feed membership;
+they do not edit feed membership or profile settings. Escape, leaving the form,
+and clicking outside dismiss the picker. The mobile search link carries the
+current community into the full search page. Existing native forms remain the
+fallback when JavaScript is unavailable.
+
+## Stable inline-preview layout
+
+Inline panels occupy an explicit grid row below listing titles and actions.
+Desktop expansion hides the thumbnail visually while retaining its grid space,
+so the title's measure and metadata/action positions remain fixed. At phone
+widths, reading actions precede the thumbnail; expansion replaces the thumbnail
+below those controls. Toggle labels reserve their collapse-label width so the
+comment count and Hide action do not shift sideways. Only the full preview image
+is visible while expanded.
+
+## Unified Saved workspace
+
+Saved presents bookmarked posts, retained comments/notes/collections, and
+archives through All / For later / Comments / Copies. Post identity deduplicates
+bookmarks, annotations, and archives; individual comments remain separate.
+Save/Saved toggles the existing bookmark flag in place. Mark finished uses one
+additive default-false `reading_entries.finished` column, retaining saved
+membership; moving back to For later or re-saving clears it. Reads never finish
+items. Unsave does not delete copies or written notes. Existing comment-star
+removal and explicit archive deletion remain unchanged.
+
+Reading now contains explicit places and follows. Clearing a place preserves
+saved membership and follows. Legacy `/reading?list=later` and library GET links
+redirect to Saved; existing mutation routes and stored evidence stay compatible.
+Post annotations reuse the existing empty-comment library identity and its
+revisioned editor. Merely opening that editor does not create a visible retained
+item after unsaving. Saved selection is profile-scoped and limited in SQL to
+50 rows plus a continuation probe before loading excerpt bodies.
+
+Save options offers explicit permanent copying. Server copies and device offline
+packs remain separate, with existing budgets, private caching, CSRF checks, and
+failure/partial states. No automatic capture, finish, or device download occurs.
+
+
+## Reading overview
+
+Reading opens a feed-scoped overview: one explicit place kept within seven days,
+up to six followed-discussion updates ordered by oldest visible unread observation,
+and optionally an existing recent unfinished edition. Continue retains old places;
+Following retains unassigned follows. Source/topic tools stay separate. Quiet,
+partial, failed, pending/stale and snoozed checks have distinct wording.
+
+Catch-up uses the exact displayed reply identities, profile/revision and
+preference/branch scope. Later arrivals and undisplayed replies stay unread;
+acknowledgement leaves the kept place, saved membership and follows unchanged.
+The old generic caught-up command is rejected. Additive default-zero fields track
+explicit place time, successful capture time and per-comment acknowledgement;
+legacy timestamps are not backfilled as proof of recent intent/success.
+See [the Reading guide](docs/USAGE.md#reading) for user-facing behavior.
+
+
+Checkpoint capture excludes top-level continuation placeholders from
+checkpoint disclosure state, preserving actual comment expansion/collapse state
+without relaxing server identity validation. A focused JavaScript regression covers this case.

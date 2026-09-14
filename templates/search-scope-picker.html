@@ -1,0 +1,11 @@
+<div class="search-scope-picker" id="{{ scope_picker_id }}" hidden>
+    <div class="search-scope-picker-row">
+        <label><input type="checkbox" data-search-restrict checked> Search <span data-search-community hidden></span></label>
+        <select data-search-feed aria-label="Feed to search">
+            {% for feed in prefs.feed_groups() %}
+            <option value="{{ feed.slug }}"{% if feed.slug == prefs.active_feed %} selected{% endif %}>{{ feed.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <small data-search-scope-hint>Only communities in this feed</small>
+</div>

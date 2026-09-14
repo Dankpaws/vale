@@ -49,8 +49,9 @@ struct SubscriptionsTemplate {
 
 // CONSTANTS
 
-const PREFS: [&str; 30] = [
+const PREFS: [&str; 31] = [
 	"theme",
+	"reading_sidebar",
 	"front_page",
 	"layout",
 	"wide",
@@ -85,6 +86,7 @@ const PREFS: [&str; 30] = [
 fn stored_preference_value(name: &str, value: &str) -> String {
 	match name {
 		"theme" => canonical_theme(value),
+		"reading_sidebar" => if value == "right" { "right" } else { "left" }.into(),
 		"front_page" => "default".to_string(),
 		"layout" => "compact".to_string(),
 		"wide" | "fixed_navbar" | "remove_default_feeds" => "on".to_string(),
@@ -400,6 +402,9 @@ pub async fn set(mut req: Request<Body>) -> Result<Response<Body>, String> {
 fn apply_profile_form(prefs: &mut Preferences, form: &HashMap<String, String>) {
 	let value = |name: &str| form.get(name).cloned().unwrap_or_default();
 	prefs.theme = canonical_theme(&value("theme"));
+	if let Some(side) = form.get("reading_sidebar") {
+		prefs.reading_sidebar = side.clone();
+	}
 	prefs.comment_sort = value("comment_sort");
 	prefs.collapse_child_comments = value("collapse_child_comments");
 	prefs.post_sort = value("post_sort");
@@ -970,9 +975,30 @@ mod tests {
 
 		assert!(subscriptions.contains("href=\"/search?scope=all&amp;sort=relevance&amp;type=sr_user\">Find a community</a>"));
 		assert!(interactions.contains("const NAVIGATION_STATE_VERSION = 3;"));
-		assert!(service_worker.contains("const CACHE = \"vale-v97-static\";"));
+		assert!(service_worker.contains("const CACHE = \"vale-v114-static\";"));
 		assert!(service_worker.contains("request.headers.get(\"X-Vale-Fragment\") === \"posts-v1\""));
-		assert!(base.contains("-vale-v78"));
-		assert!(base.contains("-v55"));
+		assert!(base.contains("-vale-v92"));
+		assert!(base.contains("-v66"));
+	}
+}
+
+#[cfg(test)]
+mod sidebar_tests {
+	use super::*;
+	#[test]
+	fn sidebar_survives_profile_and_export_round_trips() {
+		for side in ["left", "right", "invalid"] {
+			let mut prefs = Preferences::default();
+			apply_profile_form(&mut prefs, &HashMap::from([("reading_sidebar".into(), side.into())]));
+			let expected = if side == "right" { "right" } else { "left" };
+			assert_eq!(prefs.reading_sidebar, expected);
+			assert_eq!(stored_preference_value("reading_sidebar", side), expected);
+			assert_eq!(Preferences::from_bincode(&prefs.to_bincode().unwrap()).unwrap().reading_sidebar, expected);
+			let mut value = serde_json::to_value(&prefs).unwrap();
+			value.as_object_mut().unwrap().remove("reading_sidebar");
+			let mut older: Preferences = serde_json::from_value(value).unwrap();
+			older.apply_reader_defaults();
+			assert_eq!(older.reading_sidebar, "left");
+		}
 	}
 }

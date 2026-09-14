@@ -6,7 +6,56 @@ called out separately from local regressions.
 
 ## Unreleased
 
-No changes recorded yet.
+### Reading and Saved
+
+- Unify saved posts, comments, notes, collections, and permanent copies in
+  **Saved**, with All / For later / Comments / Copies views. Save and unsave
+  work in place; finishing a post is explicit and preserves saved membership.
+  Unsaving a link preserves written notes and permanent copies.
+- Make **Reading** a named-feed overview with a recent explicit place,
+  bounded followed-discussion updates, and an optional unfinished edition.
+  Continue and Following retain older places and unassigned follows.
+- Catch up only the replies actually displayed in a followed-discussion update.
+  Later arrivals, undisplayed replies, kept places, and saved membership remain
+  independent. Partial, stale, pending, failed, and snoozed checks are distinct.
+- Retain compatible links from the former Read later and Library pages.
+
+### Interface
+
+- Refine the flat editorial layout across feeds, discussions, Reading, Saved,
+  and account pages, with responsive typography, spacing, and reading controls.
+- Add a contextual search picker for the current named feed or community;
+  searching all Reddit remains an explicit choice.
+- Keep titles, metadata, and controls stationary while inline previews expand,
+  with one visible preview image and stable toggle widths on desktop and mobile.
+- Resolve the Feed navigation to the active named feed so Hide and Undo use
+  the canonical listing and retain in-place replenishment.
+
+### Performance and comment controls
+
+
+- Reduce work during comment collapse, reply reveal, reading-position capture, scrolling, and mobile Settings; avoid unused offline image copies.
+- Load exact grouped discussions in bounded parallel batches while preserving source order and validation; reduce repeated preview URL scans.
+- Batch topic-watch persistence, skip capture for unfollowed discussions, and stop cancelled or timed-out FFmpeg remux processes.
+- Keep Reddit token refresh recoverable when a grouped request cancels an in-progress refresh.
+- Keep incomplete comment-search summaries opaque so scrolled text cannot show through the sticky controls.
+- Embed supported GIPHY reaction links inline in comments through the authenticated media proxy.
+- Replace per-comment save text with compact, aligned stars. Save and unsave stay in the discussion and retain their state after reload.
+- Move manual reading checkpoints to one bookmark control in the reading toolbar, with clearer explicit Resume behavior.
+- Open feed comment-count and discussion-preview links at the post top.
+- Add a persisted Left/Right desktop Reading sidebar preference; mobile keeps its compact toolbar.
+
+- Exclude top-level continuation placeholders from saved checkpoint disclosure
+  state while retaining actual comment expansion and collapse state.
+
+### Upgrade notes
+
+- Back up profile state before upgrading. Four additive default-zero fields
+  record explicit finish state, place time, successful follow checks, and reply
+  acknowledgements. Existing timestamps are not backfilled as proof of intent
+  or successful retrieval; existing saved items, notes, and copies are retained.
+- These changes are on the development branch; v0.37.0 remains the latest
+  tagged binary release.
 
 ## 0.37.0 - 2026-09-04
 

@@ -14,7 +14,7 @@
 			{% if params.has_query %}
 			<p>Results for “{{ params.q }}” in <strong>{{ params.scope_label }}</strong>.</p>
 			{% else %}
-			<p>Search <strong>{{ params.scope_label }}</strong>. Your active named feed is the default.</p>
+			<p>Search <strong>{{ params.scope_label }}</strong>.</p>
 			{% endif %}
 		</header>
 
@@ -25,7 +25,7 @@
 		</nav>
 		{% endif %}
 
-		<form id="search_sort" class="search-form" action="{% if sub.is_empty() %}/search{% else %}/r/{{ sub }}/search{% endif %}" method="GET" role="search">
+		<form data-search-picker id="search_sort" class="search-form" action="{% if sub.is_empty() %}/search{% else %}/r/{{ sub }}/search{% endif %}" method="GET" role="search">
 			<label for="search">Search query</label>
 			<div class="search-query-row">
 				<input id="search" type="search" name="q" placeholder="Search posts and communities" value="{{ params.q }}" autocomplete="off">
@@ -38,6 +38,8 @@
 			<label class="search-community-scope" for="restrict_sr"><input type="checkbox" name="restrict_sr" id="restrict_sr"{% if params.restrict_sr != "" %} checked{% endif %}> Search only r/{{ sub }}</label>
 			{% endif %}
 			{% if params.typed == "sr_user" %}<input type="hidden" name="type" value="sr_user">{% endif %}
+            {% let scope_picker_id = "page-search-scope" %}
+            {% include "search-scope-picker.html" %}
 			<div class="search-sort-row">
 				<label for="search-sort">Sort</label>
 				<select id="search-sort" name="sort">

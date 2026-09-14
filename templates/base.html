@@ -28,14 +28,14 @@
 		<link rel="manifest" type="application/json" href="/manifest.json">
 		<link rel="icon" type="image/svg+xml" href="/vale-mark.svg">
 		<link rel="shortcut icon" type="image/x-icon" href="/favicon.ico">
-			<link rel="stylesheet" type="text/css" href="/style.css?v={{ env!("CARGO_PKG_VERSION") }}-vale-v78">
+			<link rel="stylesheet" type="text/css" href="/style.css?v={{ env!("CARGO_PKG_VERSION") }}-vale-v92">
 			<script src="/register-sw.js" defer></script>
 			<script src="/playHLSVideo.js?v={{ env!("CARGO_PKG_VERSION") }}-v8" defer></script>
-			<script src="/vale-interactions.js?v={{ env!("CARGO_PKG_VERSION") }}-v55" defer></script>
+			<script src="/vale-interactions.js?v={{ env!("CARGO_PKG_VERSION") }}-v66" defer></script>
 			<meta name="vale-video-quality" content="{{ prefs.video_quality }}">
 		{% endblock %}
 	</head>
-	<body class="vale-ui"
+	<body class="vale-ui" data-reading-sidebar="{{ prefs.reading_sidebar }}"
 		data-keyboard-navigation="{{ prefs.keyboard_navigation }}"
 		data-key-next-post="{{ prefs.key_next_post }}"
 		data-key-previous-post="{{ prefs.key_previous_post }}"
@@ -53,26 +53,28 @@
 				</a>
 
 				<nav class="primary-nav" aria-label="Primary navigation">
-					<a class="nav-link{% if url.starts_with("/subscriptions") || url.starts_with("/feeds") %} is-active{% endif %}" href="/feeds" aria-label="Feeds"{% if url.starts_with("/subscriptions") || url.starts_with("/feeds") %} aria-current="page"{% endif %}>
+					<a class="nav-link{% if crate::utils::is_canonical_feed_home(url) %} is-active{% endif %}" href="/" aria-label="Feed"{% if crate::utils::is_canonical_feed_home(url) %} aria-current="page"{% endif %}>
 						<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"></circle><circle cx="17" cy="10" r="2.25"></circle><path d="M3.5 19c.35-3.35 2.2-5 5.5-5s5.15 1.65 5.5 5"></path><path d="M14.5 15c2.9-.45 4.85.75 5.5 3.5"></path></svg>
-						<span>Feeds</span>
+						<span>Feed</span>
 					</a>
-                    <a class="nav-link{% if url.starts_with("/reading") || url.starts_with("/offline.html") %} is-active{% endif %}" href="/reading" aria-label="Reading"{% if url.starts_with("/reading") || url.starts_with("/offline.html") %} aria-current="page"{% endif %}>
+                    <a class="nav-link{% if url.starts_with("/reading") %} is-active{% endif %}" href="/reading" aria-label="Reading"{% if url.starts_with("/reading") %} aria-current="page"{% endif %}>
                         <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v16M12 5C9 3 5 3 2 4v15c3-1 7-1 10 2 3-3 7-3 10-2V4c-3-1-7-1-10 1Z"></path></svg><span>Reading</span>
                     </a>
-					<a class="nav-link{% if url.starts_with("/saved") %} is-active{% endif %}" href="/saved" aria-label="Saved"{% if url.starts_with("/saved") %} aria-current="page"{% endif %}>
+					<a class="nav-link{% if url.starts_with("/saved") || url.starts_with("/offline.html") %} is-active{% endif %}" href="/saved" aria-label="Saved"{% if url.starts_with("/saved") || url.starts_with("/offline.html") %} aria-current="page"{% endif %}>
 						<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21l-6-3.8L6 21V4.5Z"></path></svg>
 						<span>Saved</span>
 					</a>
 				</nav>
 
-				<form class="header-search" action="/search" role="search">
+				<form data-search-picker class="header-search" action="/search" role="search">
 					<label class="sr-only" for="header-search-input">Search Vale</label>
 					<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m15.4 15.4 4.6 4.6"></path></svg>
 					<input id="header-search-input" name="q" type="search" placeholder="Search Vale" autocomplete="off">
 					<input type="hidden" name="scope" value="feed">
 					<input type="hidden" name="feed" value="{{ prefs.active_feed }}">
 					<input type="hidden" name="sort" value="relevance">
+                    {% let scope_picker_id = "header-search-scope" %}
+                    {% include "search-scope-picker.html" %}
 					<button type="submit" aria-label="Submit search">
 						<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13"></path><path d="m14 7 5 5-5 5"></path></svg>
 					</button>
@@ -90,6 +92,7 @@
 		</header>
 
 		<div class="app-canvas" id="main-content" tabindex="-1">
+{% if let Some(banner) = crate::config::get_setting("REDLIB_BANNER") %}<p class="editorial-demo-notice">{{ banner }}</p>{% endif %}
 			{% block body %}
 			<main>
 				{% block content %}{% endblock %}

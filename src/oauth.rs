@@ -7,7 +7,11 @@ use log::{info, trace, warn};
 use serde_json::{json, Value};
 #[cfg(test)]
 use std::sync::LazyLock;
-use std::{collections::HashMap, sync::atomic::Ordering, time::Duration};
+use std::{
+	collections::HashMap,
+	sync::atomic::{AtomicBool, Ordering},
+	time::Duration,
+};
 use tokio::time::timeout;
 
 const REDDIT_ANDROID_OAUTH_CLIENT_ID: &str = "ohXpoqrZYub1kg";
@@ -148,14 +152,32 @@ pub async fn token_daemon() {
 	}
 }
 
+struct RefreshGuard<'a>(&'a AtomicBool);
+
+impl<'a> RefreshGuard<'a> {
+	fn acquire(rolling_over: &'a AtomicBool) -> Option<Self> {
+		rolling_over
+			.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+			.ok()
+			.map(|_| Self(rolling_over))
+	}
+}
+
+impl Drop for RefreshGuard<'_> {
+	fn drop(&mut self) {
+		self.0.store(false, Ordering::SeqCst);
+	}
+}
+
 pub async fn force_refresh_token() -> bool {
-	if OAUTH_IS_ROLLING_OVER.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+	// Request cancellation must release the refresh flag as well as normal completion.
+	let Some(_refresh) = RefreshGuard::acquire(&OAUTH_IS_ROLLING_OVER) else {
 		trace!("Skipping refresh token roll over, already in progress");
 		return false;
-	}
+	};
 
 	trace!("Rolling over refresh token. Current rate limit: {}", OAUTH_RATELIMIT_REMAINING.load(Ordering::SeqCst));
-	let refreshed = match Oauth::acquire().await {
+	match Oauth::acquire().await {
 		Ok(new_client) => {
 			OAUTH_CLIENT.swap(new_client.into());
 			OAUTH_RATELIMIT_REMAINING.store(99, Ordering::SeqCst);
@@ -165,9 +187,7 @@ pub async fn force_refresh_token() -> bool {
 			warn!("{message}");
 			false
 		}
-	};
-	OAUTH_IS_ROLLING_OVER.store(false, Ordering::SeqCst);
-	refreshed
+	}
 }
 
 #[cfg(test)]
@@ -351,6 +371,34 @@ fn choose<T: Copy>(list: &[T]) -> T {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[tokio::test]
+	async fn cancelled_refresh_releases_its_flag_without_releasing_another_owner() {
+		let rolling_over = AtomicBool::new(false);
+		let owner = RefreshGuard::acquire(&rolling_over).unwrap();
+		assert!(RefreshGuard::acquire(&rolling_over).is_none());
+		assert!(rolling_over.load(Ordering::SeqCst));
+		drop(owner);
+		assert!(!rolling_over.load(Ordering::SeqCst));
+
+		// A second unauthorized source fails while the first awaits token acquisition.
+		let (started, waiting) = tokio::sync::oneshot::channel();
+		let result: Result<((), ()), ()> = tokio::try_join!(
+			async {
+				let _refresh = RefreshGuard::acquire(&rolling_over).unwrap();
+				started.send(()).unwrap();
+				std::future::pending::<Result<(), ()>>().await
+			},
+			async {
+				waiting.await.unwrap();
+				assert!(RefreshGuard::acquire(&rolling_over).is_none());
+				Err(())
+			}
+		);
+		assert!(result.is_err());
+		assert!(!rolling_over.load(Ordering::SeqCst));
+		assert!(RefreshGuard::acquire(&rolling_over).is_some());
+	}
 
 	#[tokio::test(flavor = "multi_thread")]
 	#[ignore = "requires live Reddit OAuth"]

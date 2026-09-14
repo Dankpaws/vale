@@ -186,6 +186,10 @@ pub async fn page(req: Request<Body>) -> Result<Response<Body>, String> {
 	let Some(profile) = account::context(&req).map(|c| c.profile_id) else {
 		return Ok(reply(StatusCode::UNAUTHORIZED, "Sign in to use your library."));
 	};
+	if req.uri().path() == "/reading/library" {
+		let target = format!("/saved/library{}", req.uri().query().map(|q| format!("?{q}")).unwrap_or_default());
+		return Ok(crate::utils::redirect(&target));
+	}
 	let form: std::collections::HashMap<String, String> = url::form_urlencoded::parse(req.uri().query().unwrap_or_default().as_bytes()).into_owned().collect();
 	let v = |k: &str| form.get(k).map(String::as_str).unwrap_or_default();
 	let db = account::open_database()?;
@@ -228,7 +232,7 @@ pub async fn page(req: Request<Body>) -> Result<Response<Body>, String> {
 		s.append_pair("q", v("q"))
 			.append_pair("collection", v("collection"))
 			.append_pair("offset", &offset.to_string());
-		format!("/reading/library?{}", s.finish())
+		format!("/saved/library?{}", s.finish())
 	};
 	let next = if items.len() == 100 { page_url(offset + 100) } else { String::new() };
 	let previous = if offset > 0 { page_url((offset - 100).max(0)) } else { String::new() };
@@ -254,6 +258,28 @@ pub async fn page(req: Request<Body>) -> Result<Response<Body>, String> {
 		previous,
 	}))
 }
+/// One profile-scoped query for a rendered post, including continuation fragments.
+pub fn decorate_comments(req: &Request<Body>, post: &str, groups: &mut [crate::thread::ThreadGroup]) -> Result<(), String> {
+	let Some(profile) = account::context(req).map(|c| c.profile_id) else {
+		return Ok(());
+	};
+	let db = account::open_database()?;
+	let mut statement = db
+		.prepare("SELECT comment,id,revision FROM reading_library WHERE profile_id=?1 AND post=?2")
+		.map_err(|e| e.to_string())?;
+	let saved = statement
+		.query_map(params![profile, post], |r| Ok((r.get::<_, String>(0)?, (r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))))
+		.map_err(|e| e.to_string())?
+		.collect::<Result<std::collections::HashMap<_, _>, _>>()
+		.map_err(|e| e.to_string())?;
+	for group in groups {
+		for comment in std::iter::once(&mut group.root).chain(group.descendants.iter_mut()) {
+			(comment.saved_id, comment.saved_revision) = saved.get(&comment.id).copied().unwrap_or_default();
+		}
+	}
+	Ok(())
+}
+
 pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 	let Some(profile) = account::context(&req).map(|c| c.profile_id) else {
 		return Ok(reply(StatusCode::UNAUTHORIZED, "Sign in to save comments."));
@@ -262,7 +288,33 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 	let bytes = crate::utils::read_body_limited(req.body_mut(), 131072, "Note is too large.").await?;
 	let form: std::collections::HashMap<String, String> = url::form_urlencoded::parse(&bytes).into_owned().collect();
 	let v = |k: &str| form.get(k).map(String::as_str).unwrap_or_default();
-	let id = if v("action") == "capture" {
+	let id = if v("action") == "save-post" {
+		let db = account::open_database()?;
+		let entry = crate::reading::get(&db, profile, v("post")).map_err(|e| format!("{e:?}"))?;
+		let copy = crate::archive::archive_for_post(&req, v("post"))?;
+		let (title, community) = if entry.bookmarked {
+			(entry.title, entry.community)
+		} else if let Some(copy) = copy {
+			(copy.title, copy.community)
+		} else {
+			return Ok(reply(StatusCode::NOT_FOUND, "Saved post not found."));
+		};
+		let item = Saved {
+			id: 0,
+			post: v("post").into(),
+			comment: String::new(),
+			title,
+			community,
+			author: String::new(),
+			body: String::new(),
+			context: String::new(),
+			captured: account::now(),
+			note: String::new(),
+			collection: String::new(),
+			revision: 0,
+		};
+		save(&mut account::open_database()?, profile, &item).map_err(|e| format!("{e:?}"))?
+	} else if v("action") == "capture" {
 		let parts = v("source").split('/').collect::<Vec<_>>();
 		let post = parts.iter().position(|s| *s == "comments").and_then(|i| parts.get(i + 1)).copied().unwrap_or("");
 		let comment = v("comment");
@@ -360,10 +412,28 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 			id
 		}
 	};
+	if matches!(v("action"), "capture" | "remove") && req.headers().get("accept").and_then(|h| h.to_str().ok()) == Some("application/json") {
+		return Ok(
+			Response::builder()
+				.header("content-type", "application/json")
+				.header("cache-control", "private, no-store")
+				.body(Body::from(serde_json::json!({"id":id,"revision": if id > 0 { get(&account::open_database()?, profile, id).map_err(|e| format!("{e:?}"))?.map_or(0, |item| item.revision) } else { 0 }}).to_string()))
+				.unwrap(),
+		);
+	}
 	Ok(
 		Response::builder()
 			.status(StatusCode::SEE_OTHER)
-			.header("location", if id == 0 { "/reading/library".into() } else { format!("/reading/library?id={id}") })
+			.header(
+				"location",
+				if v("action") == "capture" || v("action") == "remove" && !v("return_to").is_empty() {
+					crate::utils::safe_local_redirect(v("return_to"), "/saved?view=comments", 2048)
+				} else if id == 0 {
+					"/saved?view=comments".into()
+				} else {
+					format!("/saved/library?id={id}")
+				},
+			)
 			.header("cache-control", "private, no-store")
 			.body(Body::empty())
 			.unwrap(),

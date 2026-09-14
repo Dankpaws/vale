@@ -808,6 +808,8 @@ pub fn is_canonical_feed_home(url: &str) -> bool {
 #[template(path = "comment.html")]
 /// Comment with content, post, score and data/time that it was posted
 pub struct Comment {
+	pub saved_id: i64,
+	pub saved_revision: i64,
 	pub id: String,
 	pub kind: String,
 	pub parent_id: String,
@@ -1003,7 +1005,7 @@ pub fn canonical_theme(value: &str) -> String {
 }
 
 #[derive(Default, Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
-#[revisioned(revision = 6)]
+#[revisioned(revision = 7)]
 pub struct Preferences {
 	#[revision(start = 1)]
 	#[serde(skip_serializing, skip_deserializing)]
@@ -1084,6 +1086,9 @@ pub struct Preferences {
 	#[revision(start = 6, default_fn = "default_archive_budget_mib")]
 	#[serde(default)]
 	pub archive_budget_mib: u64,
+	#[revision(start = 7, default_fn = "default_reading_sidebar")]
+	#[serde(default)]
+	pub reading_sidebar: String,
 }
 
 #[derive(Deserialize)]
@@ -1182,6 +1187,7 @@ impl From<LegacyPreferencesV2> for Preferences {
 			key_hide_post: "h".to_string(),
 			hide_post_behavior: "instant".to_string(),
 			archive_budget_mib: 0,
+			reading_sidebar: "left".into(),
 		}
 	}
 }
@@ -1280,6 +1286,10 @@ impl Preferences {
 		Ok("instant".to_owned())
 	}
 
+	fn default_reading_sidebar(_revision: u16) -> Result<String, revision::Error> {
+		Ok("left".to_owned())
+	}
+
 	fn default_archive_budget_mib(_revision: u16) -> Result<u64, revision::Error> {
 		Ok(0)
 	}
@@ -1288,6 +1298,9 @@ impl Preferences {
 	/// browser cookies that predate those settings.
 	pub fn apply_reader_defaults(&mut self) {
 		self.theme = canonical_theme(&self.theme);
+		if self.reading_sidebar != "right" {
+			self.reading_sidebar = "left".into();
+		}
 		// Vale has one intentional responsive interface. These legacy fields
 		// remain serialized only so pre-Vale cookie and export formats continue
 		// to decode without changing the rendered product.
@@ -1361,6 +1374,7 @@ impl Preferences {
 			key_hide_post: setting_or_default(req, "key_hide_post", "h".to_string()),
 			hide_post_behavior: setting_or_default(req, "hide_post_behavior", "instant".to_string()),
 			archive_budget_mib: 0,
+			reading_sidebar: setting(req, "reading_sidebar"),
 		};
 		preferences.apply_reader_defaults();
 		preferences
@@ -1994,52 +2008,80 @@ pub fn rewrite_urls(input_text: &str) -> String {
 	text1 = text1.replace("%5C", "").replace("\\_", "_");
 
 	// Rewrite external media previews to Vale's same-origin proxy.
-	loop {
-		if REDDIT_PREVIEW_REGEX.find(&text1).is_none() {
-			return text1;
-		} else {
-			let formatted_url = format_url(REDDIT_PREVIEW_REGEX.find(&text1).map(|x| x.as_str()).unwrap_or_default());
+	while let Some(captures) = REDDIT_PREVIEW_REGEX.captures(&text1) {
+		let matched = captures.get(0).unwrap();
+		let prefix_range = matched.start()..captures.get(2).unwrap().start();
+		let formatted_url = format_url(matched.as_str());
 
-			let image_url = REDLIB_PREVIEW_LINK_REGEX.find(&formatted_url).map_or("", |m| m.as_str());
-			let mut image_caption = REDLIB_PREVIEW_TEXT_REGEX.find(&formatted_url).map_or("", |m| m.as_str());
+		let image_url = REDLIB_PREVIEW_LINK_REGEX.find(&formatted_url).map_or("", |m| m.as_str());
+		let mut image_caption = REDLIB_PREVIEW_TEXT_REGEX.find(&formatted_url).map_or("", |m| m.as_str());
 
-			/* As long as image_caption isn't empty remove first and last four characters of image_text to leave us with just the text in the caption without any HTML.
-			This makes it possible to enclose it in a <figcaption> later on without having stray HTML breaking it */
-			if !image_caption.is_empty() {
-				image_caption = &image_caption[1..image_caption.len() - 4];
-			}
-
-			// image_url contains > at the end of it, and right above this we remove image_text's front >, leaving us with just a single > between them
-			let image_to_replace = format!("<p><a href=\"{image_url}{image_caption}</a></p>");
-
-			/* We don't want to show a caption that's just the image's link, so we check if we find a Reddit preview link within the image's caption.
-			If we don't find one we must have actual text, so we include a <figcaption> block that contains it.
-			Otherwise we don't include the <figcaption> block as we don't need it. */
-			let _image_replacement = if REDDIT_PREVIEW_REGEX.find(image_caption).is_none() {
-				// Without this " would show as \" instead. "\&quot;" is how the quotes are formatted within image_text beforehand
-				format!(
-					"<figure><a href=\"{image_url}<img loading=\"lazy\" src=\"{image_url}</a><figcaption>{}</figcaption></figure>",
-					image_caption.replace("\\&quot;", "\"")
-				)
-			} else {
-				format!("<figure><a href=\"{image_url}<img loading=\"lazy\" src=\"{image_url}</a></figure>")
-			};
-
-			/* In order to know if we're dealing with a normal or external preview we need to take a look at the first capture group of REDDIT_PREVIEW_REGEX
-			if it's preview we're dealing with something that needs /preview/pre, external-preview is /preview/external-pre, and i is /img */
-			let reddit_preview_regex_capture = REDDIT_PREVIEW_REGEX.captures(&text1).unwrap().get(1).map_or("", |m| m.as_str());
-
-			let _preview_type = match reddit_preview_regex_capture {
-				"preview" => "/preview/pre",
-				"external-preview" => "/preview/external-pre",
-				_ => "/img",
-			};
-
-			text1 = REDDIT_PREVIEW_REGEX
-				.replace(&text1, format!("{_preview_type}$2"))
-				.replace(&image_to_replace, &_image_replacement)
+		/* As long as image_caption isn't empty remove first and last four characters of image_text to leave us with just the text in the caption without any HTML.
+		This makes it possible to enclose it in a <figcaption> later on without having stray HTML breaking it */
+		if !image_caption.is_empty() {
+			image_caption = &image_caption[1..image_caption.len() - 4];
 		}
+
+		// image_url contains > at the end of it, and right above this we remove image_text's front >, leaving us with just a single > between them
+		let image_to_replace = format!("<p><a href=\"{image_url}{image_caption}</a></p>");
+
+		/* We don't want to show a caption that's just the image's link, so we check if we find a Reddit preview link within the image's caption.
+		If we don't find one we must have actual text, so we include a <figcaption> block that contains it.
+		Otherwise we don't include the <figcaption> block as we don't need it. */
+		let _image_replacement = if REDDIT_PREVIEW_REGEX.find(image_caption).is_none() {
+			// Without this " would show as \" instead. "\&quot;" is how the quotes are formatted within image_text beforehand
+			format!(
+				"<figure><a href=\"{image_url}<img loading=\"lazy\" src=\"{image_url}</a><figcaption>{}</figcaption></figure>",
+				image_caption.replace("\\&quot;", "\"")
+			)
+		} else {
+			format!("<figure><a href=\"{image_url}<img loading=\"lazy\" src=\"{image_url}</a></figure>")
+		};
+
+		/* In order to know if we're dealing with a normal or external preview we need to take a look at the first capture group of REDDIT_PREVIEW_REGEX
+		if it's preview we're dealing with something that needs /preview/pre, external-preview is /preview/external-pre, and i is /img */
+		let reddit_preview_regex_capture = captures.get(1).map_or("", |m| m.as_str());
+
+		let _preview_type = match reddit_preview_regex_capture {
+			"preview" => "/preview/pre",
+			"external-preview" => "/preview/external-pre",
+			_ => "/img",
+		};
+
+		// Preserve global caption replacement while avoiding repeated scans of the URL prefix.
+		text1.replace_range(prefix_range, _preview_type);
+		text1 = text1.replace(&image_to_replace, &_image_replacement);
 	}
+	text1
+}
+
+/// Recognize only GIPHY GIF identities; never turn an arbitrary URL into a proxy target.
+fn giphy_id(value: &str) -> Option<String> {
+	let url = url::Url::parse(value).ok()?;
+	if !matches!(url.scheme(), "https" | "http") || !url.username().is_empty() || url.password().is_some() || url.port().is_some() {
+		return None;
+	}
+	let parts = url.path_segments()?.collect::<Vec<_>>();
+	let host = url.host_str()?;
+	let id = match host {
+		"giphy.com" | "www.giphy.com" if parts.len() == 2 && matches!(parts[0], "gifs" | "embed") => parts[1].rsplit('-').next()?,
+		"media.giphy.com" | "media0.giphy.com" | "media1.giphy.com" | "media2.giphy.com" | "media3.giphy.com" | "media4.giphy.com" | "i.giphy.com"
+			if parts.len() >= 3 && parts[0] == "media" =>
+		{
+			parts[parts.len() - 2]
+		}
+		"i.giphy.com" if parts.len() == 1 => parts[0].strip_suffix(".gif")?,
+		_ => return None,
+	};
+	(!id.is_empty() && id.len() <= 100 && id.bytes().all(|c| c.is_ascii_alphanumeric())).then(|| id.to_string())
+}
+
+fn rewrite_comment_reactions(comment: &str) -> String {
+	static LINKS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<a\b[^>]*\bhref="([^"]+)"[^>]*>([^<]*)</a>"#).unwrap());
+	LINKS.replace_all(comment, |captures: &regex::Captures<'_>| {
+		let Some(id) = giphy_id(&captures[1]) else { return captures[0].to_string(); };
+		format!(r#"<span class="comment-reaction"><a href="https://giphy.com/gifs/{id}" rel="noreferrer"><img src="/reaction/giphy/{id}" loading="lazy" alt="Reaction GIF" decoding="async"><small>GIPHY ↗</small></a></span>"#)
+	}).into_owned()
 }
 
 const REDDIT_EMOTE_ASSET_PREFIX: &str = "https://reddit-econ-prod-assets-permanent.s3.amazonaws.com/asset-manager/";
@@ -2091,7 +2133,7 @@ pub fn rewrite_emotes(media_metadata: &Value, comment: String) -> String {
 	comment = render_bullet_lists(&comment);
 
 	// Call rewrite_urls() to transform any other Reddit links
-	rewrite_urls(&comment)
+	rewrite_comment_reactions(&rewrite_urls(&comment))
 }
 
 /// Format vote count to a string that will be displayed.
@@ -2695,10 +2737,11 @@ mod tests {
 			key_hide_post: "h".to_owned(),
 			hide_post_behavior: "delay".to_owned(),
 			archive_budget_mib: 0,
+			reading_sidebar: "left".into(),
 		};
 		let urlencoded = serde_urlencoded::to_string(prefs).expect("Failed to serialize Prefs");
 
-		assert_eq!(urlencoded, "theme=laserwave&front_page=default&layout=compact&wide=on&blur_spoiler=on&show_nsfw=off&blur_nsfw=on&hide_hls_notification=off&video_quality=best&hide_sidebar_and_summary=off&use_hls=on&autoplay_videos=on&fixed_navbar=on&disable_visit_reddit_confirmation=on&comment_sort=confidence&post_sort=top&subscriptions=memes%2Bmildlyinteresting&filters=&hide_awards=off&hide_score=off&remove_default_feeds=off&collapse_child_comments=on&comment_filter_keywords=&feed_groups=&active_feed=&keyboard_navigation=on&key_next_post=j&key_previous_post=k&key_open_post=Enter&key_toggle_preview=e&key_hide_post=h&hide_post_behavior=delay&archive_budget_mib=0");
+		assert_eq!(urlencoded, "theme=laserwave&front_page=default&layout=compact&wide=on&blur_spoiler=on&show_nsfw=off&blur_nsfw=on&hide_hls_notification=off&video_quality=best&hide_sidebar_and_summary=off&use_hls=on&autoplay_videos=on&fixed_navbar=on&disable_visit_reddit_confirmation=on&comment_sort=confidence&post_sort=top&subscriptions=memes%2Bmildlyinteresting&filters=&hide_awards=off&hide_score=off&remove_default_feeds=off&collapse_child_comments=on&comment_filter_keywords=&feed_groups=&active_feed=&keyboard_navigation=on&key_next_post=j&key_previous_post=k&key_open_post=Enter&key_toggle_preview=e&key_hide_post=h&hide_post_behavior=delay&archive_budget_mib=0&reading_sidebar=left");
 	}
 
 	#[test]
@@ -2816,6 +2859,23 @@ mod tests {
 			r#"<p><a href="https://preview.redd.it/6awags382xo31.png?width=2560&amp;format=png&amp;auto=webp&amp;s=9c563aed4f07a91bdd249b5a3cea43a79710dcfc">caption 1</a></p>"#;
 		let output = r#"<figure><a href="/preview/pre/6awags382xo31.png?width=2560&amp;format=png&amp;auto=webp&amp;s=9c563aed4f07a91bdd249b5a3cea43a79710dcfc"><img loading="lazy" src="/preview/pre/6awags382xo31.png?width=2560&amp;format=png&amp;auto=webp&amp;s=9c563aed4f07a91bdd249b5a3cea43a79710dcfc"></a><figcaption>caption 1</figcaption></figure>"#;
 		assert_eq!(rewrite_urls(input), output);
+	}
+
+	#[test]
+	fn rewriting_preview_captions_preserves_global_matching_links() {
+		let local = r#"<p><a href="/preview/pre/same.png">one &amp; two</a></p>"#;
+		let remote = r#"<p><a href="https://preview.redd.it/same.png">one &amp; two</a></p>"#;
+		let figure = r#"<figure><a href="/preview/pre/same.png"><img loading="lazy" src="/preview/pre/same.png"></a><figcaption>one &amp; two</figcaption></figure>"#;
+		let input = format!("<section>\n{local}\r\n{remote}\n{remote}\n</section>");
+		assert_eq!(rewrite_urls(&input), format!("<section>\n{figure}\r\n{figure}\n{figure}\n</section>"));
+	}
+
+	#[test]
+	fn rewriting_preview_urls_preserves_multiline_markup_and_escaping() {
+		let input =
+			"<p><a\n href=\"https://external-preview.redd.it/one.jpg?a=1&amp;b=2\"><span>Caption</span></a></p>\r\n<img src=\"http://i.redd.it/two.png\" alt=\"quote &quot; safe\">";
+		let expected = "<p><a\n href=\"/preview/external-pre/one.jpg?a=1&amp;b=2\"><span>Caption</span></a></p>\r\n<img src=\"/img/two.png\" alt=\"quote &quot; safe\">";
+		assert_eq!(rewrite_urls(input), expected);
 	}
 
 	#[test]
@@ -3018,5 +3078,34 @@ How`s your monitor by the way? Any IPS bleed whatsoever? I either got lucky or t
 		let decompressed = if compression { deflate_decompress(compressed).unwrap() } else { compressed };
 		let deserialized: Preferences = bincode::deserialize(&decompressed).unwrap();
 		assert_eq!(*input, deserialized);
+	}
+}
+
+#[cfg(test)]
+mod reaction_tests {
+	use super::*;
+	#[test]
+	fn giphy_comments_use_fixed_private_media_routes() {
+		for source in [
+			"https://giphy.com/gifs/hello-YsTs5ltWtEhnq",
+			"https://giphy.com/embed/YsTs5ltWtEhnq",
+			"https://media1.giphy.com/media/YsTs5ltWtEhnq/200.gif",
+			"https://i.giphy.com/media/v1.token/YsTs5ltWtEhnq/giphy.gif?tracking=discard",
+		] {
+			let html = rewrite_comment_reactions(&format!(r#"<p><a href="{source}">gif</a></p>"#));
+			assert!(html.contains("src=\"/reaction/giphy/YsTs5ltWtEhnq\""));
+			assert!(!html.contains("tracking"));
+		}
+		for source in [
+			"https://giphy.com.evil.test/gifs/abc",
+			"https://giphy.com@evil.test/gifs/abc",
+			"https://giphy.com/gifs/%22bad",
+			"https://giphy.com:444/gifs/abc",
+			"javascript:alert(1)",
+			"https://tenor.com/view/example",
+		] {
+			let html = format!(r#"<a href="{source}">original link</a>"#);
+			assert_eq!(rewrite_comment_reactions(&html), html);
+		}
 	}
 }

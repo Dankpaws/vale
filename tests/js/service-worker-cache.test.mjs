@@ -5,7 +5,7 @@ import vm from "node:vm";
 
 const source = (await readFile(new URL("../../static/service-worker.js", import.meta.url), "utf8")).replaceAll("__VALE_VERSION__", "test");
 
-const runFetch = async (cachedResponse, path = "/style.css?v=test-vale-v78", options = {}) => {
+const runFetch = async (cachedResponse, path = "/style.css?v=test-vale-v92", options = {}) => {
 	let fetchHandler;
 	let fetches = 0;
 	let puts = 0;
@@ -80,8 +80,8 @@ test("installation precaches fonts and icons without downloading unversioned scr
  await pending;
  assert.ok(paths.includes("/fonts/source-sans-3.woff2"));
  assert.ok(paths.includes("/vale-mark.svg"));
- assert.ok(paths.includes("/style.css?v=test-vale-v78"));
- assert.ok(paths.includes("/vale-interactions.js?v=test-v55"));
+ assert.ok(paths.includes("/style.css?v=test-vale-v92"));
+ assert.ok(paths.includes("/vale-interactions.js?v=test-v66"));
  assert.ok(paths.includes("/playHLSVideo.js?v=test-v8"));
  assert.ok(!paths.includes("/style.css"));
  const base = await readFile(new URL("../../templates/base.html", import.meta.url), "utf8");

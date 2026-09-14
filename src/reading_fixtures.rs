@@ -7,6 +7,7 @@ pub(crate) fn preferences(theme: &str) -> Preferences {
 		theme: theme.into(),
 		collapse_child_comments: "on".into(),
 		active_feed: "field-notes".into(),
+		feed_groups: crate::utils::serialize_feed_groups(&feeds()),
 		..Preferences::default()
 	};
 	prefs.apply_reader_defaults();
@@ -70,6 +71,7 @@ pub(crate) fn comments() -> serde_json::Value {
 	for i in 0..12 {
 		roots.push(json!({"kind":"t1", "data": {"id":format!("root{i}"), "name":format!("t1_root{i}"), "parent_id":"t3_post0", "author":format!("reader_{i}"), "body_html":"<p>Make the things you touch every day work well. Good tools disappear into the task, and the result feels natural.</p><p>I kept a short list of what slowed me down. That was more useful than starting over.</p>", "score":42 - i, "created_utc":1700000000.0, "replies": if i == 0 {json!({"data":{"children":[child.clone()]}})} else {json!("")}}}));
 	}
+	roots[1]["data"]["body_html"] = json!(r#"<p><a href="https://giphy.com/gifs/YsTs5ltWtEhnq">A reaction GIF</a></p>"#);
 	json!({"data":{"children":roots}})
 }
 

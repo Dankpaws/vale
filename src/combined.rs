@@ -7,9 +7,11 @@ use crate::{
 use askama::Template;
 use hyper::{header, Body, Request, Response, StatusCode};
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 
 const MAX_COMBINED_POSTS: usize = 12;
 const MAX_COMBINED_ROOT_COMMENTS: usize = 500;
+const COMBINED_FETCH_CONCURRENCY: usize = 3;
 
 pub struct CombinedDiscussionView {
 	pub activity: crate::activity::Visit,
@@ -67,6 +69,24 @@ fn requested_post_ids(request: &Request<Body>) -> Result<Vec<String>, &'static s
 	Ok(ids)
 }
 
+async fn fetch_source_batch<F, Fut>(ids: &[String], fetch: F) -> Result<Vec<serde_json::Value>, String>
+where
+	F: Fn(String) -> Fut,
+	Fut: Future<Output = Result<serde_json::Value, String>>,
+{
+	debug_assert!(ids.len() <= COMBINED_FETCH_CONCURRENCY);
+	let fetch = &fetch;
+	let fetch_at = |index: usize| async move {
+		match ids.get(index) {
+			Some(id) => fetch(id.clone()).await.map(Some),
+			None => Ok(None),
+		}
+	};
+	// Keep input order, and cancel sibling requests if a source fails.
+	let (first, second, third) = tokio::try_join!(fetch_at(0), fetch_at(1), fetch_at(2))?;
+	Ok([first, second, third].into_iter().flatten().collect())
+}
+
 pub async fn item(request: Request<Body>) -> Result<Response<Body>, String> {
 	let ids = match requested_post_ids(&request) {
 		Ok(ids) => ids,
@@ -81,29 +101,31 @@ pub async fn item(request: Request<Body>) -> Result<Response<Body>, String> {
 	let mut combined_comments = Vec::new();
 	let mut sources = Vec::new();
 
-	for id in ids {
-		let response = json(format!("/comments/{id}.json?sort=top&limit=500&depth=10&raw_json=1"), true)
+	for batch in ids.chunks(COMBINED_FETCH_CONCURRENCY) {
+		let responses = fetch_source_batch(batch, |id| json(format!("/comments/{id}.json?sort=top&limit=500&depth=10&raw_json=1"), true))
 			.await
 			.map_err(|message| format!("Reddit could not provide one of the grouped discussions: {message}"))?;
-		let post_thing = &response[0]["data"]["children"][0];
-		let post = parse_post(post_thing).await;
-		if post.id.is_empty() || post.content_key.is_empty() {
-			return Ok(plain_response(
-				StatusCode::BAD_REQUEST,
-				"One of those submissions has no strong content identity, so Vale will not merge it.",
-			));
-		}
-		if identity.is_empty() {
-			identity = post.content_key.clone();
-			source_url = post.out_url.clone().unwrap_or_default();
-		} else if identity != post.content_key {
-			return Ok(plain_response(
-				StatusCode::BAD_REQUEST,
-				"Those submissions do not share an exact URL or Reddit crosspost identity. Vale will not combine unrelated discussions.",
-			));
-		}
+		for response in responses {
+			let post_thing = &response[0]["data"]["children"][0];
+			let post = parse_post(post_thing).await;
+			if post.id.is_empty() || post.content_key.is_empty() {
+				return Ok(plain_response(
+					StatusCode::BAD_REQUEST,
+					"One of those submissions has no strong content identity, so Vale will not merge it.",
+				));
+			}
+			if identity.is_empty() {
+				identity = post.content_key.clone();
+				source_url = post.out_url.clone().unwrap_or_default();
+			} else if identity != post.content_key {
+				return Ok(plain_response(
+					StatusCode::BAD_REQUEST,
+					"Those submissions do not share an exact URL or Reddit crosspost identity. Vale will not combine unrelated discussions.",
+				));
+			}
 
-		sources.push((post, response));
+			sources.push((post, response));
+		}
 	}
 
 	// Validate every source before recording any visits to this combined page.
@@ -130,6 +152,7 @@ pub async fn item(request: Request<Body>) -> Result<Response<Body>, String> {
 		let activity = crate::activity::for_post(&request, &post, false)?;
 		account::record_post_view(&request, &post)?;
 		activity.highlight(&mut groups);
+		crate::library::decorate_comments(&request, &post.id, &mut groups)?;
 		for group in groups.into_iter().filter(|group| group.root.kind == "t1") {
 			combined_comments.push(CombinedCommentView {
 				activity: activity.clone(),
@@ -178,6 +201,71 @@ pub async fn item(request: Request<Body>) -> Result<Response<Body>, String> {
 mod tests {
 	use super::*;
 	use serde_json::json;
+	use std::sync::{
+		atomic::{AtomicUsize, Ordering},
+		Arc,
+	};
+
+	#[tokio::test]
+	async fn source_batches_overlap_three_requests_and_preserve_input_order() {
+		let active = AtomicUsize::new(0);
+		let peak = AtomicUsize::new(0);
+		let ids = (0..8).map(|index| index.to_string()).collect::<Vec<_>>();
+		let mut responses = Vec::new();
+		for batch in ids.chunks(COMBINED_FETCH_CONCURRENCY) {
+			let barrier = tokio::sync::Barrier::new(batch.len());
+			let fetched = tokio::time::timeout(
+				std::time::Duration::from_secs(2),
+				fetch_source_batch(batch, |id| {
+					let (active, peak, barrier) = (&active, &peak, &barrier);
+					async move {
+						peak.fetch_max(active.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
+						// This cannot pass if the batch silently becomes serial.
+						barrier.wait().await;
+						tokio::time::sleep(std::time::Duration::from_millis(3 - id.parse::<u64>().unwrap() % 3)).await;
+						active.fetch_sub(1, Ordering::SeqCst);
+						Ok(json!(id))
+					}
+				}),
+			)
+			.await
+			.unwrap()
+			.unwrap();
+			responses.extend(fetched);
+		}
+		assert_eq!(responses, ids.into_iter().map(|id| json!(id)).collect::<Vec<_>>());
+		assert_eq!(peak.load(Ordering::SeqCst), COMBINED_FETCH_CONCURRENCY);
+		assert_eq!(active.load(Ordering::SeqCst), 0);
+		assert!(fetch_source_batch(&[], |_| async { panic!("an empty batch must not fetch") }).await.unwrap().is_empty());
+	}
+
+	#[tokio::test]
+	async fn a_failed_source_cancels_pending_batch_requests() {
+		struct ActiveRequest(Arc<AtomicUsize>);
+		impl Drop for ActiveRequest {
+			fn drop(&mut self) {
+				self.0.fetch_sub(1, Ordering::SeqCst);
+			}
+		}
+		let active = Arc::new(AtomicUsize::new(0));
+		let ids = vec!["pending-a".to_string(), "failure".to_string(), "pending-b".to_string()];
+		let result = fetch_source_batch(&ids, |id| {
+			let active = Arc::clone(&active);
+			async move {
+				active.fetch_add(1, Ordering::SeqCst);
+				let _request = ActiveRequest(active);
+				if id == "failure" {
+					tokio::task::yield_now().await;
+					Err("synthetic retrieval failure".to_string())
+				} else {
+					std::future::pending().await
+				}
+			}
+		})
+		.await;
+		assert_eq!(result.unwrap_err(), "synthetic retrieval failure");
+		assert_eq!(active.load(Ordering::SeqCst), 0);
+	}
 
 	#[test]
 	fn rejects_single_or_unbounded_combined_requests() {

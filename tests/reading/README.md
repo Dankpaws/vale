@@ -38,3 +38,22 @@ integrity and foreign keys. The supplied backup is not modified.
 VALE_MIGRATION_FIXTURE=/path/to/profile-backup.sqlite3 \
   cargo test --locked copied_state_schema_rehearsal -- --ignored
 ```
+
+Search-scope review: focus the header query on the feed fixture, switch the
+synthetic feed, and submit to inspect the requested URL. On a discussion fixture,
+verify the community label and `restrict_sr=on`; unchecking must submit
+`scope=all` to `/search`. Escape dismisses the picker without losing the query.
+The fixture server does not serve search results; use the compiled loopback
+application's `/search` and `/r/localllama/search?restrict_sr=on` for full-page
+and mobile checks. Fixture preferences include the same synthetic feed groups
+as the visible feed navigation.
+
+Image-expansion regression check: at 320, 390, 768, and 1440 CSS pixels, compare
+`#post2 > .post_header`, `#post2 > .post_title`, and `#post2 > .post_footer`
+bounding rectangles relative to `#post2`, before and after clicking its
+`.post_inline_toggle`. X/Y/width/height must remain identical. Also compare the
+primary toggle, comment count, and primary Hide button once the card is visible
+in the viewport; clicking must not move these controls. Verify Enter toggles,
+one visible image, no horizontal overflow or shadows, and a wrapped text-post
+preview below its title/actions. Scrolling a previously offscreen test target
+into view is separate from expansion-induced layout movement.

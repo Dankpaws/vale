@@ -651,6 +651,8 @@ impl ThreadModel {
 				let search_match = projection.search_match_ids.contains(&comment.node_id);
 				let search_context = projection.search_context_ids.contains(&comment.node_id);
 				Some(Comment {
+					saved_id: 0,
+					saved_revision: 0,
 					id: comment.id,
 					kind: "t1".to_string(),
 					parent_id: base_id(&comment.parent_id),
@@ -701,6 +703,8 @@ impl ThreadModel {
 				let parent_available = projection.projected_ids.contains(&continuation.parent_id);
 				let parent_author = projection.parent_authors.get(&continuation.parent_id).cloned().unwrap_or_default();
 				Some(Comment {
+					saved_id: 0,
+					saved_revision: 0,
 					id: continuation.node_id.clone(),
 					kind: "more".to_string(),
 					parent_id: base_id(&continuation.parent_id),

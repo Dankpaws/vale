@@ -3,21 +3,20 @@
 {% block title %}Saved posts · Vale{% endblock %}
 
 {% block content %}
-<p class="reading-library-link"><a href="/reading">Continue reading · Bookmarks and followed discussions</a></p>
 <div id="column_one" class="simple-page saved-page">
 	<header class="page-hero saved-hero">
 		<div>
 			<span class="eyebrow">YOUR PROFILE</span>
 			<h1>Saved posts</h1>
-			<p>Immutable local snapshots that remain readable without Reddit. Each archive includes a standalone reader, structured manifest, comments, and captured media.</p>
+			<p>Posts saved for offline reading.</p>
 		</div>
 	</header>
-	<dl class="archive-metrics saved-storage-metrics" aria-label="Archive storage">
+	<details class="editorial-storage"><summary>{{ quota.used_size }} used of {{ quota.effective_limit_size }} · Storage details</summary><dl class="archive-metrics saved-storage-metrics" aria-label="Archive storage">
 		<div><dt>Used</dt><dd>{{ quota.used_size }}</dd></div>
 		<div><dt>Temporarily reserved</dt><dd>{{ quota.reserved_size }}</dd></div>
 		<div><dt>Effective limit</dt><dd>{{ quota.effective_limit_size }}</dd></div>
 		<div><dt>Instance maximum</dt><dd>{{ quota.instance_limit_size }}</dd></div>
-	</dl>
+	</dl></details>
 	{% if quota.is_over_budget %}
 	<p class="archive-capacity-warning"><strong>This profile is {{ quota.over_by_size }} over its effective limit.</strong> Existing saves remain readable; new captures and retries are paused. <a href="/settings#archive-storage">Delete archives or adjust archive storage settings.</a></p>
 	{% else if quota.instance_exhausted %}

@@ -399,7 +399,11 @@ async fn main() {
 	app.at("/reading/command").post(|r| redlib::reading::command_post(r).boxed());
 	app.at("/history").get(|r| account::history_get(r).boxed());
 	app.at("/history/clear").post(|r| account::history_clear_post(r).boxed());
-	app.at("/saved").get(|r| archive::list_get(r).boxed());
+	app.at("/saved").get(|r| redlib::saved::page(r).boxed());
+	app
+		.at("/saved/library")
+		.get(|r| redlib::library::page(r).boxed())
+		.post(|r| redlib::library::mutate(r).boxed());
 	app.at("/saved/:archive_id").get(|r| archive::detail_get(r).boxed());
 	app.at("/saved/:archive_id/view.html").get(|r| archive::view_get(r).boxed());
 	app.at("/saved/:archive_id/manifest.json").get(|r| archive::manifest_get(r).boxed());
@@ -417,6 +421,7 @@ async fn main() {
 	// Proxy media through Vale's same-origin reader.
 	app.at("/vid/:id/:size").get(|r| proxy(r, "https://v.redd.it/{id}/DASH_{size}").boxed());
 	app.at("/hls/:id/*path").get(|r| proxy(r, "https://v.redd.it/{id}/{path}").boxed());
+	app.at("/reaction/giphy/:id").get(|r| redlib::client::reaction_gif(r).boxed());
 	app.at("/img/*path").get(|r| proxy(r, "https://i.redd.it/{path}").boxed());
 	app.at("/thumb/:point/:id").get(|r| proxy(r, "https://{point}.thumbs.redditmedia.com/{id}").boxed());
 	app.at("/emoji/:id/:name").get(|r| proxy(r, "https://emoji.redditmedia.com/{id}/{name}").boxed());

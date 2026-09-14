@@ -225,3 +225,29 @@ test("reading viewport anchor: twelve boundaries",()=>{
  const cases=[[[a,b],100,800,"","a"],[[a,b],150,800,"","b"],[[a,b],400,800,"",null],[[],100,800,"",null],[[a,b],100,800,"b","b"],[[a,b],100,800,"missing",null],[[{id:"far",top:900,bottom:1000}],100,800,"",null],[[{id:"zero",top:100,bottom:100}],100,800,"",null],[[a],NaN,800,"",null],[[a],100,50,"",null],[[{id:"long",top:-5000,bottom:500}],100,800,"","long"],[[{id:"",top:0,bottom:500},b],100,800,"","b"]];
  for(const [nodes,line,height,explicit,expected]of cases)assert.equal(choose(nodes,line,height,explicit)?.id||null,expected);
 });
+
+const commentSaveHandler = source.slice(source.indexOf('    document.addEventListener("submit", async (event) => {'), source.indexOf('    document.body.classList.add("supports-reading-actions");'));
+for (const outcome of ["save", "unsave", "failure", "redirect"]) {
+ test(`comment stars toggle in place and report ${outcome}`, async () => {
+  let handler, prevented = false, toast = "", requested;
+  const classes = new Set(outcome === "unsave" ? ["is-saved"] : []);
+  const fields = {action:{value:outcome==="unsave"?"remove":"capture"},id:{value:"12"},revision:{value:"1"}};
+  const button = {disabled:false, classList:{toggle:(value,on)=>on?classes.add(value):classes.delete(value)}, setAttribute(){}, removeAttribute(){}};
+  const form = {action:fields.action, elements:{namedItem:name=>fields[name]}, getAttribute:()=>"/reading/library", matches:()=>true, querySelector:()=>button};
+  vm.runInNewContext(commentSaveHandler, {
+   document:{addEventListener:(_type, value)=>{handler=value}},
+   FormData:class { *[Symbol.iterator]() { yield ["action",fields.action.value]; } }, URLSearchParams,
+   fetch:async (url, options)=>{requested={url,options};return {ok:outcome!=="failure", redirected:outcome==="redirect", json:async()=>({id:outcome==="unsave"?0:12,revision:outcome==="unsave"?0:1})}},
+   showToast:message=>{toast=message},
+  });
+  await handler({target:form,preventDefault(){prevented=true}});
+  assert.equal(prevented,true);
+  assert.equal(requested.url,"/reading/library");
+  assert.equal(requested.options.headers.Accept,"application/json");
+  assert.equal(button.disabled,false,"the star remains available to toggle or retry");
+  assert.equal(classes.has("is-saved"),outcome==="save");
+  if(outcome==="save")assert.equal(fields.action.value,"remove");
+  if(outcome==="unsave")assert.equal(fields.action.value,"capture");
+  assert.match(toast,outcome==="save"?/Comment saved/:outcome==="unsave"?/Comment unsaved/:/Could not update/);
+ });
+}

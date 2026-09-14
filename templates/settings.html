@@ -80,7 +80,7 @@
 	{% endmatch %}
 	{% match archive_quota %}
 	{% when Some with (quota) %}
-	<form class="prefs archive-storage-form" action="/settings/archive-storage" method="POST">
+<details class="editorial-storage"{% if !archive_error.is_empty() || !archive_notice.is_empty() %} open{% endif %}><summary>Archive storage · {{ quota.used_size }} used</summary>	<form class="prefs archive-storage-form" action="/settings/archive-storage" method="POST">
 		<fieldset id="archive-storage" class="archive-storage-fieldset">
 			<legend>Archive storage</legend>
 			<input type="hidden" name="archive_budget_revision" value="{{ archive_setting.revision }}">
@@ -113,7 +113,7 @@
 			{% endif %}
 			<button class="primary-button" type="submit">Save archive budget</button>
 		</fieldset>
-	</form>
+	</form></details>
 	{% when None %}
 	{% endmatch %}
 	<form id="preferences-form" action="/settings" method="POST">
@@ -123,6 +123,10 @@
 			{% if settings_saved %}<p class="settings-saved-status" role="status">Settings saved.</p>{% endif %}
 			<fieldset>
 				<legend>Appearance</legend>
+                <div class="prefs-group">
+                    <label class="preference-copy" for="reading_sidebar"><span>Reading sidebar</span><small>Choose the desktop side. Mobile keeps the compact toolbar.</small></label>
+                    <select name="reading_sidebar" id="reading_sidebar"><option value="left"{% if prefs.reading_sidebar != "right" %} selected{% endif %}>Left</option><option value="right"{% if prefs.reading_sidebar == "right" %} selected{% endif %}>Right</option></select>
+                </div>
 				<div class="prefs-group">
 					<label class="preference-copy" for="theme"><span>Theme</span><small>System follows this device. Light and Dark remain fixed.</small></label>
 					<select name="theme" id="theme">

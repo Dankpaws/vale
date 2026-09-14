@@ -307,6 +307,7 @@ fn ffmpeg_remux_arguments(user_agent: &str, upstream: &str, maximum: u64) -> Vec
 async fn remux_upstream_to(upstream: &str, output: &Path, maximum: u64) -> Result<u64, String> {
 	let user_agent = OAUTH_CLIENT.load_full().user_agent().to_string();
 	let mut command = Command::new("ffmpeg");
+	command.kill_on_drop(true);
 	command.args(ffmpeg_remux_arguments(&user_agent, upstream, maximum));
 	command.arg(output);
 	let status = timeout(VIDEO_REMUX_TIMEOUT, command.status()).await;

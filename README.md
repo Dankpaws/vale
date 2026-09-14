@@ -20,6 +20,13 @@ an instance reachable by anyone else.
 > boundary before binding it to a non-loopback address. Never expose a fresh
 > HTTP listener directly to the public internet.
 
+## On the development branch
+
+Changes since v0.37.0 unify Saved, add a feed-scoped Reading overview and
+precise reply catch-up, and refine search, previews, comment controls, and
+performance. See [Unreleased changes](CHANGELOG.md#unreleased). The installation
+commands below still select the latest tagged binary release, v0.37.0.
+
 ## What is new in 0.37.0
 
 The Reading workspace brings full-discussion checkpoints, persistent comment

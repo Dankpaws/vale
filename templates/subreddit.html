@@ -18,7 +18,7 @@
 {% block body %}
 	<main class="feed-page{% if sub.name.is_empty() %} is-home-feed{% if !feed_groups.is_empty() %} has-feed-switcher{% endif %}{% else if sub.name != "all" && sub.name != "popular" && !sub.name.contains("+") %} community-page{% endif %}">
 		{% if url.contains("vale_filters=show") %}<p class="reading-library-link">Reading rules are paused for this view. <a href="/reading/filters">Manage rules</a> · <a href="{% if sub.name.is_empty() %}/f/{{ active_feed }}/{{ sort.0 }}{% else %}/r/{{ sub.name }}{% endif %}">Return to filtered reading</a></p>{% endif %}
-		{% if sub.name.is_empty() && !active_feed.is_empty() %}<form method="POST" action="/reading/editions" data-reading-window><input type="hidden" name="action" value="window"><input type="hidden" name="feed" value="{{ active_feed }}"><input type="hidden" name="items" value="{{ crate::editions::window_json(posts) }}"><button>Keep this page</button> <a href="/reading/editions">Resume saved windows</a></form>{% endif %}
+		{% if sub.name.is_empty() && !active_feed.is_empty() %}<details class="editorial-feed-tools"><summary>Reading tools</summary><form method="POST" action="/reading/editions" data-reading-window><input type="hidden" name="action" value="window"><input type="hidden" name="feed" value="{{ active_feed }}"><input type="hidden" name="items" value="{{ crate::editions::window_json(posts) }}"><button>Keep this page</button> <a href="/reading/editions">Resume saved windows</a></form></details>{% endif %}
         <section class="feed-hero">
 			<div>
 				{% if !sub.name.is_empty() %}<span class="eyebrow">COMMUNITY</span>{% endif %}

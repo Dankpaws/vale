@@ -1,7 +1,7 @@
-const CACHE = "vale-v97-static";
+const CACHE = "vale-v114-static";
 const STATIC_ASSETS = [
-	"/style.css?v=__VALE_VERSION__-vale-v78",
-	"/vale-interactions.js?v=__VALE_VERSION__-v55",
+	"/style.css?v=__VALE_VERSION__-vale-v92",
+	"/vale-interactions.js?v=__VALE_VERSION__-v66",
 	"/playHLSVideo.js?v=__VALE_VERSION__-v8",
 	"/manifest.json",
 	"/offline.html",

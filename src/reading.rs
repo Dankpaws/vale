@@ -17,10 +17,14 @@ pub struct ReadingEntry {
 	#[serde(default)]
 	pub resume: String,
 	pub bookmarked: bool,
+	#[serde(default)]
+	pub finished: bool,
 	pub followed: bool,
 	pub caught_up_at: i64,
 	pub revision: i64,
 	pub updated_at: i64,
+	#[serde(default)]
+	pub place_kept_at: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -118,6 +122,16 @@ pub(crate) fn initialize(db: &Connection) -> rusqlite::Result<()> {
 	if !exists {
 		db.execute_batch("ALTER TABLE reading_entries ADD COLUMN resume TEXT NOT NULL DEFAULT '';")?;
 	}
+	let finished: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('reading_entries') WHERE name='finished')", [], |r| r.get(0))?;
+	if !finished {
+		db.execute_batch("ALTER TABLE reading_entries ADD COLUMN finished INTEGER NOT NULL DEFAULT 0;")?;
+	}
+	let exists: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('reading_entries') WHERE name='place_kept_at')", [], |r| {
+		r.get(0)
+	})?;
+	if !exists {
+		db.execute_batch("ALTER TABLE reading_entries ADD COLUMN place_kept_at INTEGER NOT NULL DEFAULT 0;")?;
+	}
 	Ok(())
 }
 
@@ -128,7 +142,7 @@ fn valid_anchor(value: &str) -> bool {
 pub fn get(db: &Connection, profile: i64, post: &str) -> Result<ReadingEntry, WriteError> {
 	Ok(
 		db.query_row(
-			"SELECT post_id,title,community,anchor,bookmarked,followed,caught_up_at,revision,updated_at,resume FROM reading_entries WHERE profile_id=?1 AND post_id=?2",
+			"SELECT post_id,title,community,anchor,bookmarked,followed,caught_up_at,revision,updated_at,resume,finished,place_kept_at FROM reading_entries WHERE profile_id=?1 AND post_id=?2",
 			params![profile, post],
 			row,
 		)
@@ -152,6 +166,8 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReadingEntry> {
 		revision: row.get(7)?,
 		updated_at: row.get(8)?,
 		resume: row.get(9)?,
+		finished: row.get(10)?,
+		place_kept_at: row.get(11)?,
 	})
 }
 
@@ -217,7 +233,12 @@ fn command_with_resume(
 				..Default::default()
 			});
 		}
-		"bookmark" => entry.bookmarked = true,
+		"bookmark" => {
+			entry.bookmarked = true;
+			entry.finished = false;
+		}
+		"finish" if entry.bookmarked => entry.finished = true,
+		"later" if entry.bookmarked => entry.finished = false,
 		"unbookmark" => entry.bookmarked = false,
 		"follow" => {
 			if !entry.followed && tx.query_row("SELECT count(*) FROM reading_entries WHERE profile_id=?1 AND followed=1", [profile], |r| r.get::<_, i64>(0))? >= 100 {
@@ -226,15 +247,18 @@ fn command_with_resume(
 			entry.followed = true;
 		}
 		"unfollow" => entry.followed = false,
-		"checkpoint" => entry.anchor = anchor.to_string(),
-		"caught-up" => {
-			crate::watch::acknowledge(&tx, profile, post)?;
-			entry.caught_up_at = now.max(entry.caught_up_at);
+		"clear-place" => {
+			entry.anchor.clear();
+			entry.resume.clear();
+			entry.place_kept_at = 0;
+		}
+		"checkpoint" => {
 			entry.anchor = anchor.to_string();
+			entry.place_kept_at = now.max(entry.place_kept_at);
 		}
 		_ => return Err(WriteError::Invalid),
 	}
-	if matches!(action, "checkpoint" | "caught-up") {
+	if action == "checkpoint" {
 		entry.resume = serde_json::to_string(&resume.unwrap_or_default()).map_err(|_| WriteError::Invalid)?;
 	}
 	entry.title = title.trim().to_string();
@@ -249,8 +273,8 @@ fn command_with_resume(
 	 ON CONFLICT(profile_id,post_id) DO UPDATE SET title=excluded.title,community=excluded.community,anchor=excluded.anchor,bookmarked=excluded.bookmarked,followed=excluded.followed,caught_up_at=excluded.caught_up_at,revision=excluded.revision,updated_at=excluded.updated_at",
 	 params![profile,post,entry.title,entry.community,entry.anchor,entry.bookmarked,entry.followed,entry.caught_up_at,entry.revision,entry.updated_at])?;
 	tx.execute(
-		"UPDATE reading_entries SET resume=?3 WHERE profile_id=?1 AND post_id=?2",
-		params![profile, post, entry.resume],
+		"UPDATE reading_entries SET resume=?3,finished=?4,place_kept_at=?5 WHERE profile_id=?1 AND post_id=?2",
+		params![profile, post, entry.resume, entry.finished, entry.place_kept_at],
 	)?;
 	tx.commit()?;
 	Ok(entry)
@@ -262,25 +286,51 @@ struct ReadingTemplate {
 	prefs: Preferences,
 	url: String,
 	entries: Vec<ReadingEntry>,
-	updates: Vec<crate::sources::FeedUpdate>,
+}
+
+pub fn list(db: &Connection, profile: i64) -> Result<Vec<ReadingEntry>, String> {
+	let mut statement = db.prepare("SELECT post_id,title,community,anchor,bookmarked,followed,caught_up_at,revision,updated_at,resume,finished,place_kept_at FROM reading_entries WHERE profile_id=?1 ORDER BY updated_at DESC,post_id LIMIT 5000").map_err(|e| e.to_string())?;
+	let entries = statement
+		.query_map([profile], row)
+		.map_err(|e| e.to_string())?
+		.collect::<Result<Vec<_>, _>>()
+		.map_err(|e| e.to_string())?;
+	Ok(entries)
 }
 
 pub async fn list_get(req: Request<Body>) -> Result<Response<Body>, String> {
+	let view = url::form_urlencoded::parse(req.uri().query().unwrap_or_default().as_bytes())
+		.find(|(key, _)| key == "list")
+		.map(|(_, v)| v.into_owned())
+		.unwrap_or_default();
+	if view.is_empty() || view == "following" {
+		return crate::reading_home::page(req).await;
+	}
+	if !["continue", "later"].contains(&view.as_str()) {
+		return Ok(response(StatusCode::NOT_FOUND, "Reading view not found."));
+	}
+
 	let Some(context) = account::context(&req) else {
 		return Ok(response(StatusCode::UNAUTHORIZED, "Sign in to keep reading state."));
 	};
 	let db = account::open_database()?;
-	let mut statement = db.prepare("SELECT post_id,title,community,anchor,bookmarked,followed,caught_up_at,revision,updated_at,resume FROM reading_entries WHERE profile_id=?1 ORDER BY updated_at DESC,post_id LIMIT 5000").map_err(|e| e.to_string())?;
-	let entries = statement
-		.query_map([context.profile_id], row)
-		.map_err(|e| e.to_string())?
-		.collect::<Result<Vec<_>, _>>()
-		.map_err(|e| e.to_string())?;
+	let mut entries = list(&db, context.profile_id)?;
+	let list = url::form_urlencoded::parse(req.uri().query().unwrap_or_default().as_bytes())
+		.find(|(key, _)| key == "list")
+		.map(|(_, value)| value.into_owned())
+		.unwrap_or_default();
+	if list == "later" {
+		return Ok(crate::utils::redirect("/saved?view=later"));
+	} else if list == "following" {
+		entries.retain(|entry| entry.followed);
+	} else {
+		entries.retain(|entry| !entry.anchor.is_empty());
+		entries.sort_by(|a, b| b.place_kept_at.cmp(&a.place_kept_at).then_with(|| a.post_id.cmp(&b.post_id)));
+	}
 	Ok(template(&ReadingTemplate {
 		prefs: Preferences::new(&req),
 		url: req.uri().to_string(),
 		entries,
-		updates: crate::sources::updates(&db, context.profile_id).map_err(|e| format!("{e:?}"))?,
 	}))
 }
 
@@ -311,7 +361,9 @@ pub async fn command_post(mut req: Request<Body>) -> Result<Response<Body>, Stri
 			Response::builder()
 				.header("content-type", "application/json")
 				.header("cache-control", "private, no-store")
-				.body(Body::from(serde_json::json!({"revision":entry.revision,"url":entry.permalink()}).to_string()))
+				.body(Body::from(
+					serde_json::json!({"revision":entry.revision,"url":entry.permalink(),"bookmarked":entry.bookmarked,"finished":entry.finished}).to_string(),
+				))
 				.unwrap(),
 		),
 		Ok(_) => Ok(
@@ -349,6 +401,45 @@ mod tests {
 		crate::watch::initialize(&db).unwrap();
 		db
 	}
+	#[test]
+	fn finished_column_preserves_preexisting_reading_state() {
+		let db = Connection::open_in_memory().unwrap();
+		db.execute_batch("CREATE TABLE profiles(id INTEGER PRIMARY KEY); INSERT INTO profiles VALUES(1);
+        CREATE TABLE reading_entries(profile_id INTEGER,post_id TEXT,title TEXT,community TEXT,anchor TEXT,bookmarked INTEGER,followed INTEGER,caught_up_at INTEGER,revision INTEGER,updated_at INTEGER,resume TEXT,PRIMARY KEY(profile_id,post_id));
+        INSERT INTO reading_entries VALUES(1,'abc123','Old title','rust','def456',1,1,30,8,40,'');").unwrap();
+		initialize(&db).unwrap();
+		initialize(&db).unwrap();
+		let entry = get(&db, 1, "abc123").unwrap();
+		assert!(entry.bookmarked && entry.followed && !entry.finished);
+		assert_eq!((entry.anchor.as_str(), entry.revision, entry.caught_up_at, entry.updated_at), ("def456", 8, 30, 40));
+		assert_eq!(entry.place_kept_at, 0);
+	}
+
+	#[test]
+	fn saved_finish_unsave_and_place_are_independent() {
+		let mut db = database();
+		let saved = command(&mut db, 1, "abc123", "Title", "rust", 0, "bookmark", "", 100).unwrap();
+		let placed = command(&mut db, 1, "abc123", "Title", "rust", saved.revision, "checkpoint", "t1_def", 101).unwrap();
+		let followed = command(&mut db, 1, "abc123", "Title", "rust", placed.revision, "follow", "", 102).unwrap();
+		let finished = command(&mut db, 1, "abc123", "Title", "rust", followed.revision, "finish", "", 103).unwrap();
+		assert!(finished.bookmarked && finished.finished && finished.followed);
+		assert_eq!(finished.anchor, "t1_def");
+		assert_eq!(
+			command(&mut db, 1, "abc123", "Title", "rust", followed.revision, "unbookmark", "", 104),
+			Err(WriteError::Conflict)
+		);
+		let cleared = command(&mut db, 1, "abc123", "Title", "rust", finished.revision, "clear-place", "", 104).unwrap();
+		assert!(cleared.bookmarked && cleared.finished && cleared.followed);
+		assert!(cleared.anchor.is_empty());
+		let unsaved = command(&mut db, 1, "abc123", "Title", "rust", cleared.revision, "unbookmark", "", 105).unwrap();
+		assert!(!unsaved.bookmarked && unsaved.followed);
+		let again = command(&mut db, 1, "abc123", "Title", "rust", unsaved.revision, "bookmark", "", 106).unwrap();
+		assert!(again.bookmarked && !again.finished);
+		assert!(!get(&db, 2, "abc123").unwrap().bookmarked);
+		initialize(&db).unwrap();
+		assert_eq!(get(&db, 1, "abc123").unwrap(), again);
+	}
+
 	#[test]
 	fn resume_validation_twelve_edges() {
 		for case in 0..12 {
@@ -538,8 +629,9 @@ mod tests {
 		command_edges("checkpoint");
 	}
 	#[test]
-	fn caught_up_twelve_edges() {
-		command_edges("caught-up");
+	fn legacy_caught_up_cannot_acknowledge_without_a_snapshot() {
+		let mut db = database();
+		assert_eq!(apply(&mut db, 1, 0, "caught-up"), Err(WriteError::Invalid));
 	}
 	#[test]
 	fn forget_twelve_edges() {
@@ -610,11 +702,8 @@ mod tests {
 		assert!(x.bookmarked && x.followed);
 		assert_eq!(x.anchor, "comment123");
 		assert_eq!(x.caught_up_at, 0);
-		let x = apply(&mut db, 1, 3, "caught-up").unwrap();
-		assert_eq!(x.caught_up_at, 100);
-		let x = command(&mut db, 1, "abc123", "Title", "rust", 4, "caught-up", "", 90).unwrap();
-		assert_eq!(x.caught_up_at, 100);
-		assert_eq!(x.updated_at, 100);
+		assert_eq!(apply(&mut db, 1, 3, "caught-up"), Err(WriteError::Invalid));
+		assert_eq!(get(&db, 1, "abc123").unwrap().anchor, "comment123");
 	}
 	#[test]
 	fn unknown_command_rolls_back_without_creating_state() {
