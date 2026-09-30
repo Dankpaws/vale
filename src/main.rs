@@ -167,7 +167,7 @@ async fn main() {
 				.long("address")
 				.value_name("ADDRESS")
 				.env("REDLIB_ADDRESS")
-				.help("Numeric IP address to listen on")
+				.help("Numeric IP address to listen on (VALE_ADDRESS is also accepted)")
 				.default_value("127.0.0.1")
 				.value_parser(clap::value_parser!(IpAddr))
 				.num_args(1),
@@ -219,7 +219,20 @@ async fn main() {
 		return;
 	}
 
-	let address = *matches.get_one::<IpAddr>("address").expect("clap validates the listener address");
+	let mut address = *matches.get_one::<IpAddr>("address").expect("clap validates the listener address");
+	// VALE_ADDRESS is the Vale spelling of REDLIB_ADDRESS. It applies only
+	// when neither --address nor REDLIB_ADDRESS chose the listener.
+	if matches.value_source("address") == Some(clap::parser::ValueSource::DefaultValue) {
+		if let Ok(value) = std::env::var("VALE_ADDRESS") {
+			match value.trim().parse::<IpAddr>() {
+				Ok(parsed) => address = parsed,
+				Err(_) => {
+					eprintln!("VALE_ADDRESS must be a numeric IP address.");
+					std::process::exit(2);
+				}
+			}
+		}
+	}
 	let port = *matches.get_one::<u16>("port").expect("clap validates the listener port");
 	let hsts = matches.get_one::<u64>("hsts").copied();
 

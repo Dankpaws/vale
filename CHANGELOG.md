@@ -18,6 +18,11 @@ called out separately from local regressions.
   `X-Forwarded-Proto` keeps its previous behavior.
 - Reject form submissions that carry no `Origin` header when fetch metadata
   says they came from another site.
+- Video downloads through FFmpeg now use the same outbound proxy
+  (`HTTPS_PROXY`/`ALL_PROXY`/`NO_PROXY`) as Vale's other Reddit requests, and
+  refuse to connect directly when only a SOCKS proxy is configured.
+- Accept a `VALE_*` spelling for every `REDLIB_*` setting, including
+  `VALE_ADDRESS`.
 - Reuse profile database connections and keep SQLite and password hashing
   from stalling other requests on the same worker thread.
 

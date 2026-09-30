@@ -304,10 +304,51 @@ fn ffmpeg_remux_arguments(user_agent: &str, upstream: &str, maximum: u64) -> Vec
 	.collect()
 }
 
+const FFMPEG_PROXY_ENV: [&str; 4] = ["http_proxy", "HTTP_PROXY", "no_proxy", "NO_PROXY"];
+
+/// Chooses the proxy FFmpeg must use for an HTTPS upstream so video downloads
+/// leave through the same route as Vale's other Reddit requests. The HTTP
+/// client follows `HTTPS_PROXY`, then `ALL_PROXY`, minus `NO_PROXY` hosts
+/// (upper case first, then lower case). FFmpeg only tunnels through plain
+/// `http://` proxies, so any other proxy is refused rather than letting FFmpeg
+/// connect directly.
+fn ffmpeg_proxy_for(upstream: &str, lookup: impl Fn(&str) -> Option<String>) -> Result<Option<String>, String> {
+	let first = |names: &[&str]| names.iter().find_map(|name| lookup(name).filter(|value| !value.trim().is_empty()));
+	let host = Url::parse(upstream).ok().and_then(|url| url.host_str().map(str::to_ascii_lowercase)).unwrap_or_default();
+	if let Some(no_proxy) = first(&["NO_PROXY", "no_proxy"]) {
+		let excluded = no_proxy
+			.split(',')
+			.map(|entry| entry.trim().trim_start_matches('.').to_ascii_lowercase())
+			.any(|entry| entry == "*" || (!entry.is_empty() && (host == entry || host.ends_with(&format!(".{entry}")))));
+		if excluded {
+			return Ok(None);
+		}
+	}
+	let Some(proxy) = first(&["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"]) else {
+		return Ok(None);
+	};
+	let proxy = proxy.trim();
+	match proxy.split_once("://") {
+		None => Ok(Some(format!("http://{proxy}"))),
+		Some((scheme, _)) if scheme.eq_ignore_ascii_case("http") => Ok(Some(proxy.to_string())),
+		Some(_) => Err("Video downloads need a plain http:// proxy; FFmpeg cannot use the configured proxy. Vale did not download the video directly.".to_string()),
+	}
+}
+
 async fn remux_upstream_to(upstream: &str, output: &Path, maximum: u64) -> Result<u64, String> {
 	let user_agent = OAUTH_CLIENT.load_full().user_agent().to_string();
+	let proxy = ffmpeg_proxy_for(upstream, |name| env::var(name).ok())?;
 	let mut command = Command::new("ffmpeg");
 	command.kill_on_drop(true);
+	// FFmpeg reads http_proxy/no_proxy on its own (for HTTPS too, by tunnelling
+	// with CONNECT). Replace them so it takes the route chosen above. The
+	// environment, unlike an argument, keeps proxy credentials out of `ps`.
+	for name in FFMPEG_PROXY_ENV {
+		command.env_remove(name);
+	}
+	if let Some(proxy) = &proxy {
+		command.env("http_proxy", proxy);
+	}
 	command.args(ffmpeg_remux_arguments(&user_agent, upstream, maximum));
 	command.arg(output);
 	let status = timeout(VIDEO_REMUX_TIMEOUT, command.status()).await;
@@ -395,6 +436,31 @@ mod tests {
 		assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:a:0"]));
 		assert!(!arguments.iter().any(|argument| argument == "0:a:0?"));
 		assert!(!arguments.iter().any(|argument| argument.starts_with("-c:") || argument == "libx264" || argument == "aac"));
+	}
+
+	#[test]
+	fn ffmpeg_follows_the_http_client_proxy_route() {
+		let upstream = "https://v.redd.it/example/HLSPlaylist.m3u8";
+		let environment = |pairs: &'static [(&'static str, &'static str)]| move |name: &str| pairs.iter().find(|(key, _)| *key == name).map(|(_, value)| value.to_string());
+		assert_eq!(ffmpeg_proxy_for(upstream, environment(&[])), Ok(None));
+		assert_eq!(
+			ffmpeg_proxy_for(upstream, environment(&[("HTTPS_PROXY", "http://proxy.lan:3128")])),
+			Ok(Some("http://proxy.lan:3128".to_string()))
+		);
+		assert_eq!(
+			ffmpeg_proxy_for(upstream, environment(&[("all_proxy", "http://fallback.lan:8080")])),
+			Ok(Some("http://fallback.lan:8080".to_string()))
+		);
+		assert_eq!(
+			ffmpeg_proxy_for(upstream, environment(&[("HTTPS_PROXY", "http://proxy.lan:3128"), ("NO_PROXY", "localhost,.redd.it")])),
+			Ok(None)
+		);
+		assert_eq!(
+			ffmpeg_proxy_for(upstream, environment(&[("https_proxy", "proxy.lan:3128")])),
+			Ok(Some("http://proxy.lan:3128".to_string()))
+		);
+		assert!(ffmpeg_proxy_for(upstream, environment(&[("ALL_PROXY", "socks5h://tor:9050")])).is_err());
+		assert!(ffmpeg_proxy_for(upstream, environment(&[("HTTPS_PROXY", "https://proxy.lan:443")])).is_err());
 	}
 
 	#[test]

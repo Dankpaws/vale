@@ -11,7 +11,19 @@ file, or a support paste.
 Vale reads `redlib.toml` from its working directory and environment variables.
 An environment variable wins when the same setting is present in both places.
 `REDLIB_*` settings control the inherited Redlib engine; `VALE_*` settings
-control Vale profiles, sessions, archives, and paths.
+control Vale profiles, sessions, archives, and paths. Every `REDLIB_*` setting
+also accepts a `VALE_*` spelling (for example `VALE_FULL_URL` for
+`REDLIB_FULL_URL`, and `VALE_ADDRESS` for `REDLIB_ADDRESS`); when both are
+set, the `VALE_*` value wins. In `redlib.toml`, use only one spelling per
+setting: a file that names both fails to parse.
+
+### Outbound proxy
+
+Vale's Reddit requests follow the standard `HTTPS_PROXY`, `ALL_PROXY`, and
+`NO_PROXY` environment variables. Video downloads run FFmpeg, which Vale
+points at the same proxy. FFmpeg can only tunnel through a plain `http://`
+proxy, so with a SOCKS or `https://` proxy, video downloads fail with an
+explanation instead of connecting to Reddit directly.
 
 ### Settings used by Vale
 
@@ -323,7 +335,7 @@ triage.
 | Startup reports database permission errors | The service user cannot create or write the profile database/archive directory | Fix ownership and ACLs on the exact configured paths. Do not run Vale as root. |
 | Docker restart loses accounts or Saved items | The profile database/archive paths are not mounted on durable volumes | Stop the container, inspect `docker compose config`, restore from backup, and correct the mounts before logging in again. |
 | Feeds or posts show a Reddit/OAuth/rate-limit error | Reddit changed or throttled its unofficial retrieval path, or outbound HTTPS/DNS is blocked | Check external connectivity and logs without exposing tokens. Retry later and classify the result separately from local health. |
-| Video playback works but download fails | FFmpeg is missing, not executable, or the stream exceeded the bounded download limit | Install the release-supported FFmpeg package or mark video download unavailable. Do not remove the size/time bounds. |
+| Video playback works but download fails | FFmpeg is missing, not executable, the stream exceeded the bounded download limit, or the configured outbound proxy is not a plain `http://` proxy | Install the release-supported FFmpeg package or mark video download unavailable. Do not remove the size/time bounds. |
 | Video shows the audio-aware Retry panel | HLS is disabled, the browser/player could not prepare the playlist, or the selected stream did not advertise audio | Enable HLS in Settings and Retry. Apple browsers use their native HLS engine; other browsers use the bundled player and fall back to native HLS if media attachment stalls. If the panel remains, inspect the same-origin HLS response and browser support; do not add a silent MP4 fallback. |
 | Saved reports a partial archive | Reddit returned incomplete comments, an external page was sanitized, a resource was unavailable, or a configured quota was reached | Open the capture report and read its omissions. A partial archive is not a corrupted account; retry only after checking storage and network. |
 | Hide succeeds but a listing says Retry | Vale saved or verified the hidden state, but the bounded four-page snapshot could not complete | Keep the current cards, use the explicit Retry control, and check Reddit availability. Do not clear hidden state or broaden the listing bound as a workaround. |
