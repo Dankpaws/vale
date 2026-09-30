@@ -669,7 +669,7 @@ pub fn quota_snapshot(request: &Request<Body>) -> Result<ArchiveQuotaSnapshot, S
 	let Some(profile_id) = account::context(request).map(|context| context.profile_id) else {
 		return Ok(ArchiveQuotaSnapshot::default());
 	};
-	quota_snapshot_in(&account::open_database()?, profile_id)
+	quota_snapshot_in(&*account::open_database()?, profile_id)
 }
 
 pub async fn list_get(request: Request<Body>) -> Result<Response<Body>, String> {
@@ -3625,7 +3625,7 @@ pub async fn index_post(request: Request<Body>) -> Result<Response<Body>, String
 			return Err("Archive exceeds the search indexing size limit; its reader remains available.".into());
 		}
 		let manifest: ArchiveManifest = serde_json::from_slice(&bytes).map_err(|_| "Archive manifest is invalid.")?;
-		crate::library::index_archive(&mut account::open_database()?, profile, &id, &manifest).map_err(|_| "Unable to index this archive within the search limits.".into())
+		crate::library::index_archive(&mut *account::open_database()?, profile, &id, &manifest).map_err(|_| "Unable to index this archive within the search limits.".into())
 	})
 	.await
 	.map_err(|_| "Indexing stopped unexpectedly.")?;

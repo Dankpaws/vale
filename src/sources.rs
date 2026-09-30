@@ -207,7 +207,7 @@ fn claim(db: &mut Connection, profile: i64, id: i64, now: i64) -> Result<Option<
 	Ok(Some(url))
 }
 async fn refresh(profile: i64, id: i64) -> Result<(), String> {
-	let Some(url) = claim(&mut account::open_database()?, profile, id, account::now()).map_err(|e| format!("{e:?}"))? else {
+	let Some(url) = claim(&mut *account::open_database()?, profile, id, account::now()).map_err(|e| format!("{e:?}"))? else {
 		return Ok(());
 	};
 	let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
@@ -229,7 +229,7 @@ async fn refresh(profile: i64, id: i64) -> Result<(), String> {
 	})
 	.await;
 	match result {
-		Ok(Ok(items)) => retain(&mut account::open_database()?, profile, id, &items).map_err(|e| format!("{e:?}")),
+		Ok(Ok(items)) => retain(&mut *account::open_database()?, profile, id, &items).map_err(|e| format!("{e:?}")),
 		_ => {
 			account::open_database()?
 				.execute(
@@ -454,7 +454,7 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 	let v = |k: &str| form.get(k).map(String::as_str).unwrap_or_default();
 	match v("action") {
 		"add" => {
-			let added = add(&mut account::open_database()?, profile, &prefs.feed_groups(), v("feed"), v("title"), v("source"));
+			let added = add(&mut *account::open_database()?, profile, &prefs.feed_groups(), v("feed"), v("title"), v("source"));
 			if added.is_err() {
 				return Ok(reply(
 					StatusCode::UNPROCESSABLE_ENTITY,
@@ -465,7 +465,7 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 		}
 		"refresh" => refresh(profile, v("id").parse().unwrap_or(0)).await?,
 		"seen" => {
-			if acknowledge(&account::open_database()?, profile, v("id").parse().unwrap_or(0), v("through").parse().unwrap_or(-1)).is_err() {
+			if acknowledge(&*account::open_database()?, profile, v("id").parse().unwrap_or(0), v("through").parse().unwrap_or(-1)).is_err() {
 				return Ok(reply(StatusCode::UNPROCESSABLE_ENTITY, "Source changed. Reload before marking entries read."));
 			}
 		}
@@ -477,7 +477,7 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 				.map(|d| d.and_utc().timestamp())
 				.unwrap_or(-1);
 			let result = attach(
-				&mut account::open_database()?,
+				&mut *account::open_database()?,
 				profile,
 				v("item").parse().unwrap_or(0),
 				story.parse().unwrap_or(0),
@@ -504,7 +504,7 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 			);
 		}
 		"remove" => {
-			if remove(&account::open_database()?, profile, v("id").parse().unwrap_or(0), v("revision").parse().unwrap_or(-1)).is_err() {
+			if remove(&*account::open_database()?, profile, v("id").parse().unwrap_or(0), v("revision").parse().unwrap_or(-1)).is_err() {
 				return Ok(reply(StatusCode::CONFLICT, "Source changed or was already removed. Reload to review it."));
 			}
 		}

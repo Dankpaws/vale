@@ -17,8 +17,7 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use sha2::{Digest, Sha256};
 use std::{
 	collections::{HashMap, HashSet},
-	fs,
-	path::{Path, PathBuf},
+	path::PathBuf,
 	sync::{LazyLock, Mutex},
 	time::{Duration as StdDuration, Instant},
 };
@@ -189,22 +188,13 @@ pub(crate) fn now() -> i64 {
 	OffsetDateTime::now_utc().unix_timestamp()
 }
 
-pub(crate) fn open_database() -> Result<Connection, String> {
-	open_database_at(&database_path())
+pub(crate) fn open_database() -> Result<crate::db::PooledConnection, String> {
+	crate::db::pooled_at(&database_path())
 }
 
-fn open_database_at(path: &Path) -> Result<Connection, String> {
-	if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
-		fs::create_dir_all(parent).map_err(|error| format!("Unable to create the Vale profile directory: {error}"))?;
-	}
-	let connection = Connection::open(path).map_err(|error| format!("Unable to open the Vale profile database: {error}"))?;
-	connection
-		.busy_timeout(StdDuration::from_secs(5))
-		.map_err(|error| format!("Unable to configure the Vale profile database: {error}"))?;
-	connection
-		.execute_batch("PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL;")
-		.map_err(|error| format!("Unable to configure the Vale profile database: {error}"))?;
-	Ok(connection)
+#[cfg(test)]
+fn open_database_at(path: &std::path::Path) -> Result<Connection, String> {
+	crate::db::open_at(path)
 }
 
 fn enable_wal(connection: &Connection) -> Result<(), String> {
@@ -400,10 +390,14 @@ pub fn archive_budget_setting(request: &Request<Body>) -> Result<ArchiveBudgetSe
 	let Some(profile_id) = context(request).map(|context| context.profile_id) else {
 		return Ok(ArchiveBudgetSetting::default());
 	};
-	archive_budget_setting_in(&open_database()?, profile_id)
+	archive_budget_setting_in(&*open_database()?, profile_id)
 }
 
 pub fn update_archive_budget(request: &Request<Body>, archive_budget_mib: u64, expected_revision: i64) -> Result<ArchiveBudgetUpdate, String> {
+	crate::db::blocking(|| update_archive_budget_blocking(request, archive_budget_mib, expected_revision))
+}
+
+fn update_archive_budget_blocking(request: &Request<Body>, archive_budget_mib: u64, expected_revision: i64) -> Result<ArchiveBudgetUpdate, String> {
 	let Some(profile_id) = context(request).map(|context| context.profile_id) else {
 		return Err("A server-backed profile is required to change archive storage.".to_string());
 	};
@@ -753,6 +747,10 @@ pub fn server_backed(request: &Request<Body>) -> bool {
 }
 
 pub fn save_preferences(request: &Request<Body>, preferences: &Preferences) -> Result<bool, String> {
+	crate::db::blocking(|| save_preferences_blocking(request, preferences))
+}
+
+fn save_preferences_blocking(request: &Request<Body>, preferences: &Preferences) -> Result<bool, String> {
 	let Some(context) = context(request) else {
 		return Ok(false);
 	};
@@ -768,6 +766,10 @@ pub fn save_preferences(request: &Request<Body>, preferences: &Preferences) -> R
 }
 
 pub fn restore_preferences(request: &Request<Body>, preferences: &Preferences) -> Result<bool, String> {
+	crate::db::blocking(|| restore_preferences_blocking(request, preferences))
+}
+
+fn restore_preferences_blocking(request: &Request<Body>, preferences: &Preferences) -> Result<bool, String> {
 	let Some(context) = context(request) else {
 		return Ok(false);
 	};
@@ -871,7 +873,7 @@ pub fn post_is_hidden(request: &Request<Body>, post_id: &str) -> Result<bool, St
 	let Some(context) = context(request) else {
 		return Ok(browser_hidden_post_ids(request).iter().any(|hidden| hidden == post_id));
 	};
-	post_is_hidden_in(&open_database()?, context.profile_id, post_id)
+	post_is_hidden_in(&*open_database()?, context.profile_id, post_id)
 }
 
 fn post_is_hidden_in(connection: &Connection, profile_id: i64, post_id: &str) -> Result<bool, String> {
@@ -1203,6 +1205,10 @@ fn remove_session_cookie(response: &mut Response<Body>) {
 }
 
 fn password_hash(password: &str) -> Result<String, String> {
+	crate::db::blocking(|| password_hash_blocking(password))
+}
+
+fn password_hash_blocking(password: &str) -> Result<String, String> {
 	let salt = SaltString::generate(&mut OsRng);
 	Argon2::default()
 		.hash_password(password.as_bytes(), &salt)
@@ -1211,6 +1217,10 @@ fn password_hash(password: &str) -> Result<String, String> {
 }
 
 fn password_matches(password: &str, encoded: &str) -> bool {
+	crate::db::blocking(|| password_matches_blocking(password, encoded))
+}
+
+fn password_matches_blocking(password: &str, encoded: &str) -> bool {
 	PasswordHash::new(encoded)
 		.ok()
 		.is_some_and(|hash| Argon2::default().verify_password(password.as_bytes(), &hash).is_ok())
@@ -1750,6 +1760,10 @@ fn truncate(value: &str, max_chars: usize) -> String {
 }
 
 pub fn record_post_view(request: &Request<Body>, post: &Post) -> Result<(), String> {
+	crate::db::blocking(|| record_post_view_blocking(request, post))
+}
+
+fn record_post_view_blocking(request: &Request<Body>, post: &Post) -> Result<(), String> {
 	let Some(context) = context(request) else {
 		return Ok(());
 	};
@@ -1855,6 +1869,7 @@ pub async fn health() -> Result<Response<Body>, String> {
 mod tests {
 	use super::*;
 	use route_recognizer::Params;
+	use std::{fs, path::Path};
 
 	fn temporary_database() -> PathBuf {
 		std::env::temp_dir().join(format!("vale-account-test-{}.sqlite3", uuid::Uuid::new_v4()))

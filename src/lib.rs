@@ -4,6 +4,7 @@ pub mod archive;
 pub mod client;
 pub mod combined;
 pub mod config;
+pub mod db;
 pub mod duplicates;
 pub mod html;
 pub mod listing;

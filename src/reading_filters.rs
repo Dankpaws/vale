@@ -139,7 +139,7 @@ pub fn for_listing(req: &Request<Body>, communities: Option<&[String]>) -> Resul
 		.unwrap_or_default();
 	let now = account::now();
 	Ok(
-		list(&account::open_database()?, context.profile_id)
+		list(&*account::open_database()?, context.profile_id)
 			.map_err(|e| format!("Unable to load filters: {e:?}"))?
 			.into_iter()
 			.filter(|r| (r.feed.is_empty() || r.feed == feed) && (r.until == 0 || r.until > now))
@@ -163,7 +163,7 @@ pub async fn page(req: Request<Body>) -> Result<Response<Body>, String> {
 	};
 	let prefs = Preferences::new(&req);
 	let feeds = prefs.feed_groups();
-	let rules = list(&account::open_database()?, context.profile_id).map_err(|e| format!("Unable to load filters: {e:?}"))?;
+	let rules = list(&*account::open_database()?, context.profile_id).map_err(|e| format!("Unable to load filters: {e:?}"))?;
 	Ok(template(&FilterTemplate {
 		prefs,
 		url: req.uri().to_string(),

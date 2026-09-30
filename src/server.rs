@@ -355,7 +355,7 @@ impl Server {
 						}
 					}
 
-					match crate::account::prepare_request(&mut req) {
+					match crate::db::blocking(|| crate::account::prepare_request(&mut req)) {
 						Ok(Some(mut response)) => {
 							return async move {
 								response.headers_mut().extend(def_headers);

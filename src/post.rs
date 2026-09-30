@@ -263,7 +263,7 @@ pub async fn item(req: Request<Body>) -> Result<Response<Body>, String> {
 			}
 
 			let reading = if let Some(context) = account::context(&req) {
-				crate::reading::get(&account::open_database()?, context.profile_id, &post.id).map_err(|e| format!("{e:?}"))?
+				crate::reading::get(&*account::open_database()?, context.profile_id, &post.id).map_err(|e| format!("{e:?}"))?
 			} else {
 				Default::default()
 			};
