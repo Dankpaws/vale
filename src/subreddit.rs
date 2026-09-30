@@ -383,10 +383,10 @@ pub async fn community(req: Request<Body>) -> Result<Response<Body>, String> {
 				if front_page_request {
 					if let Some(context) = account::context(&req) {
 						if active_group.is_some() {
-							crate::sources::observe(&account::open_database()?, context.profile_id, &active_feed, &result.posts, account::now()).map_err(|e| format!("{e:?}"))?;
+							crate::sources::observe(&*account::open_database()?, context.profile_id, &active_feed, &result.posts, account::now()).map_err(|e| format!("{e:?}"))?;
 						}
 						let items = result.posts.iter().map(crate::editions::Item::from_post).collect::<Vec<_>>();
-						let _ = crate::agenda::observe(&account::open_database()?, context.profile_id, &active_feed, &items, account::now());
+						let _ = crate::agenda::observe(&*account::open_database()?, context.profile_id, &active_feed, &items, account::now());
 					}
 				}
 				let previous_url = result.previous_url(&listing_url);

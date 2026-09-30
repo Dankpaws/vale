@@ -167,7 +167,7 @@ async fn main() {
 				.long("address")
 				.value_name("ADDRESS")
 				.env("REDLIB_ADDRESS")
-				.help("Numeric IP address to listen on")
+				.help("Numeric IP address to listen on (VALE_ADDRESS is also accepted)")
 				.default_value("127.0.0.1")
 				.value_parser(clap::value_parser!(IpAddr))
 				.num_args(1),
@@ -219,7 +219,20 @@ async fn main() {
 		return;
 	}
 
-	let address = *matches.get_one::<IpAddr>("address").expect("clap validates the listener address");
+	let mut address = *matches.get_one::<IpAddr>("address").expect("clap validates the listener address");
+	// VALE_ADDRESS is the Vale spelling of REDLIB_ADDRESS. It applies only
+	// when neither --address nor REDLIB_ADDRESS chose the listener.
+	if matches.value_source("address") == Some(clap::parser::ValueSource::DefaultValue) {
+		if let Ok(value) = std::env::var("VALE_ADDRESS") {
+			match value.trim().parse::<IpAddr>() {
+				Ok(parsed) => address = parsed,
+				Err(_) => {
+					eprintln!("VALE_ADDRESS must be a numeric IP address.");
+					std::process::exit(2);
+				}
+			}
+		}
+	}
 	let port = *matches.get_one::<u16>("port").expect("clap validates the listener port");
 	let hsts = matches.get_one::<u64>("hsts").copied();
 
@@ -255,6 +268,17 @@ async fn main() {
 
 	info!("Evaluating config.");
 	LazyLock::force(&config::CONFIG);
+	if !address.is_loopback() {
+		let secure_cookies = config::get_setting("VALE_COOKIE_SECURE").is_none_or(|value| value != "off");
+		if secure_cookies && config::get_setting("REDLIB_FULL_URL").is_none_or(|value| value.trim().is_empty()) {
+			warn!("Vale is listening on a non-loopback address without REDLIB_FULL_URL. Set it to the public HTTPS origin so form submissions are checked against a fixed origin rather than request headers.");
+		}
+		if !redlib::net::trusted_proxies_configured() {
+			info!(
+				"VALE_TRUSTED_PROXIES is unset: X-Forwarded-For is ignored and X-Forwarded-Proto is accepted from any peer. Set it to your reverse proxy's address to restrict both."
+			);
+		}
+	}
 	if let Err(error) = account::initialize() {
 		eprintln!("Unable to initialize Vale profiles: {error}");
 		std::process::exit(1);

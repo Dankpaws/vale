@@ -204,7 +204,7 @@ pub fn annotate(request: &Request<Body>, posts: &mut [Post]) -> Result<(), Strin
 	if ids.is_empty() {
 		return Ok(());
 	}
-	let counts = baselines(&account::open_database()?, context.profile_id, &ids, account::now()).map_err(|error| format!("Unable to load Vale comment activity: {error}"))?;
+	let counts = baselines(&*account::open_database()?, context.profile_id, &ids, account::now()).map_err(|error| format!("Unable to load Vale comment activity: {error}"))?;
 	for post in posts {
 		post.new_comments = post.comment_count.zip(counts.get(&post.id)).map_or(0, |(current, previous)| delta(current, *previous));
 		for grouped in &mut post.grouped_posts {

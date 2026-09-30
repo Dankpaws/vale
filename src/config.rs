@@ -17,100 +17,125 @@ pub const DEFAULT_PUSHSHIFT_FRONTEND: &str = "undelete.pullpush.io";
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct Config {
 	#[serde(rename = "REDLIB_SFW_ONLY")]
+	#[serde(alias = "VALE_SFW_ONLY")]
 	#[serde(alias = "LIBREDDIT_SFW_ONLY")]
 	pub(crate) sfw_only: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_THEME")]
+	#[serde(alias = "VALE_DEFAULT_THEME")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_THEME")]
 	pub(crate) default_theme: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_FRONT_PAGE")]
+	#[serde(alias = "VALE_DEFAULT_FRONT_PAGE")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_FRONT_PAGE")]
 	pub(crate) default_front_page: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_LAYOUT")]
+	#[serde(alias = "VALE_DEFAULT_LAYOUT")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_LAYOUT")]
 	pub(crate) default_layout: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_WIDE")]
+	#[serde(alias = "VALE_DEFAULT_WIDE")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_WIDE")]
 	pub(crate) default_wide: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_COMMENT_SORT")]
+	#[serde(alias = "VALE_DEFAULT_COMMENT_SORT")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_COMMENT_SORT")]
 	pub(crate) default_comment_sort: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_COLLAPSE_CHILD_COMMENTS")]
+	#[serde(alias = "VALE_DEFAULT_COLLAPSE_CHILD_COMMENTS")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_COLLAPSE_CHILD_COMMENTS")]
 	pub(crate) default_collapse_child_comments: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_POST_SORT")]
+	#[serde(alias = "VALE_DEFAULT_POST_SORT")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_POST_SORT")]
 	pub(crate) default_post_sort: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_BLUR_SPOILER")]
+	#[serde(alias = "VALE_DEFAULT_BLUR_SPOILER")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_BLUR_SPOILER")]
 	pub(crate) default_blur_spoiler: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_SHOW_NSFW")]
+	#[serde(alias = "VALE_DEFAULT_SHOW_NSFW")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_SHOW_NSFW")]
 	pub(crate) default_show_nsfw: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_BLUR_NSFW")]
+	#[serde(alias = "VALE_DEFAULT_BLUR_NSFW")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_BLUR_NSFW")]
 	pub(crate) default_blur_nsfw: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_USE_HLS")]
+	#[serde(alias = "VALE_DEFAULT_USE_HLS")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_USE_HLS")]
 	pub(crate) default_use_hls: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_HIDE_HLS_NOTIFICATION")]
+	#[serde(alias = "VALE_DEFAULT_HIDE_HLS_NOTIFICATION")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_HIDE_HLS_NOTIFICATION")]
 	pub(crate) default_hide_hls_notification: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_HIDE_AWARDS")]
+	#[serde(alias = "VALE_DEFAULT_HIDE_AWARDS")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_HIDE_AWARDS")]
 	pub(crate) default_hide_awards: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_HIDE_SIDEBAR_AND_SUMMARY")]
+	#[serde(alias = "VALE_DEFAULT_HIDE_SIDEBAR_AND_SUMMARY")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_HIDE_SIDEBAR_AND_SUMMARY")]
 	pub(crate) default_hide_sidebar_and_summary: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_HIDE_SCORE")]
+	#[serde(alias = "VALE_DEFAULT_HIDE_SCORE")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_HIDE_SCORE")]
 	pub(crate) default_hide_score: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_SUBSCRIPTIONS")]
+	#[serde(alias = "VALE_DEFAULT_SUBSCRIPTIONS")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_SUBSCRIPTIONS")]
 	pub(crate) default_subscriptions: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_FILTERS")]
+	#[serde(alias = "VALE_DEFAULT_FILTERS")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_FILTERS")]
 	pub(crate) default_filters: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_DISABLE_VISIT_REDDIT_CONFIRMATION")]
+	#[serde(alias = "VALE_DEFAULT_DISABLE_VISIT_REDDIT_CONFIRMATION")]
 	#[serde(alias = "LIBREDDIT_DEFAULT_DISABLE_VISIT_REDDIT_CONFIRMATION")]
 	pub(crate) default_disable_visit_reddit_confirmation: Option<String>,
 
 	#[serde(rename = "REDLIB_BANNER")]
+	#[serde(alias = "VALE_BANNER")]
 	#[serde(alias = "LIBREDDIT_BANNER")]
 	pub(crate) banner: Option<String>,
 
 	#[serde(rename = "REDLIB_ROBOTS_DISABLE_INDEXING")]
+	#[serde(alias = "VALE_ROBOTS_DISABLE_INDEXING")]
 	#[serde(alias = "LIBREDDIT_ROBOTS_DISABLE_INDEXING")]
 	pub(crate) robots_disable_indexing: Option<String>,
 
 	#[serde(rename = "REDLIB_PUSHSHIFT_FRONTEND")]
+	#[serde(alias = "VALE_PUSHSHIFT_FRONTEND")]
 	#[serde(alias = "LIBREDDIT_PUSHSHIFT_FRONTEND")]
 	pub(crate) pushshift: Option<String>,
 
 	#[serde(rename = "REDLIB_ENABLE_RSS")]
+	#[serde(alias = "VALE_ENABLE_RSS")]
 	pub(crate) enable_rss: Option<String>,
 
 	#[serde(rename = "REDLIB_FULL_URL")]
+	#[serde(alias = "VALE_FULL_URL")]
 	pub(crate) full_url: Option<String>,
 
 	#[serde(rename = "REDLIB_DEFAULT_REMOVE_DEFAULT_FEEDS")]
+	#[serde(alias = "VALE_DEFAULT_REMOVE_DEFAULT_FEEDS")]
 	pub(crate) default_remove_default_feeds: Option<String>,
 
 	#[serde(rename = "VALE_PROFILE_MODE")]
@@ -135,6 +160,9 @@ pub struct Config {
 
 	#[serde(rename = "VALE_ARCHIVE_TOTAL_MAX_BYTES")]
 	pub(crate) archive_total_max_bytes: Option<String>,
+
+	#[serde(rename = "VALE_TRUSTED_PROXIES")]
+	pub(crate) trusted_proxies: Option<String>,
 }
 
 impl Config {
@@ -150,13 +178,19 @@ impl Config {
 		let config = load_config("redlib.toml").or_else(|| load_config("libreddit.toml")).unwrap_or_default();
 
 		// This function defines the order of preference - first check for
-		// environment variables with "REDLIB", then check the legacy LIBREDDIT
-		// option, then check the config, then if all are `None`, return a `None`
+		// environment variables with the VALE_ spelling of a REDLIB_ setting,
+		// then "REDLIB", then the legacy LIBREDDIT option, then the config, then
+		// if all are `None`, return a `None`
 		let parse = |key: &str| -> Option<String> {
 			// Return the first non-`None` value
 			// If all are `None`, return `None`
+			let vale_key = key.strip_prefix("REDLIB_").map(|rest| format!("VALE_{rest}"));
 			let legacy_key = key.replace("REDLIB_", "LIBREDDIT_");
-			var(key).ok().or_else(|| var(legacy_key).ok()).or_else(|| get_setting_from_config(key, &config))
+			vale_key
+				.and_then(|vale_key| var(vale_key).ok())
+				.or_else(|| var(key).ok())
+				.or_else(|| var(legacy_key).ok())
+				.or_else(|| get_setting_from_config(key, &config))
 		};
 		Self {
 			sfw_only: parse("REDLIB_SFW_ONLY"),
@@ -191,6 +225,7 @@ impl Config {
 			archive_dir: parse("VALE_ARCHIVE_DIR"),
 			archive_item_max_bytes: parse("VALE_ARCHIVE_ITEM_MAX_BYTES"),
 			archive_total_max_bytes: parse("VALE_ARCHIVE_TOTAL_MAX_BYTES"),
+			trusted_proxies: parse("VALE_TRUSTED_PROXIES"),
 		}
 	}
 }
@@ -229,6 +264,7 @@ fn get_setting_from_config(name: &str, config: &Config) -> Option<String> {
 		"VALE_ARCHIVE_DIR" => config.archive_dir.clone(),
 		"VALE_ARCHIVE_ITEM_MAX_BYTES" => config.archive_item_max_bytes.clone(),
 		"VALE_ARCHIVE_TOTAL_MAX_BYTES" => config.archive_total_max_bytes.clone(),
+		"VALE_TRUSTED_PROXIES" => config.trusted_proxies.clone(),
 		_ => None,
 	}
 }
@@ -254,6 +290,19 @@ mod tests {
 	#[sealed_test(env = [("REDLIB_SFW_ONLY", "on")])]
 	fn test_env_var() {
 		assert!(crate::utils::sfw_only())
+	}
+
+	#[test]
+	#[sealed_test(env = [("VALE_FULL_URL", "https://vale.example.test"), ("REDLIB_FULL_URL", "https://redlib.example.test")])]
+	fn vale_spelling_of_redlib_settings_wins() {
+		assert_eq!(get_setting("REDLIB_FULL_URL").as_deref(), Some("https://vale.example.test"));
+	}
+
+	#[test]
+	#[sealed_test]
+	fn vale_spelling_is_accepted_in_the_config_file() {
+		write("redlib.toml", r#"VALE_DEFAULT_THEME = "light""#).unwrap();
+		assert_eq!(get_setting("REDLIB_DEFAULT_THEME").as_deref(), Some("light"));
 	}
 
 	#[test]

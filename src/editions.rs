@@ -250,7 +250,7 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 			Ok(items) => items,
 			Err(_) => return Ok(reply(StatusCode::UNPROCESSABLE_ENTITY, "Invalid reading window.")),
 		};
-		match save_window(&mut account::open_database()?, profile, &feed, &items, account::now()) {
+		match save_window(&mut *account::open_database()?, profile, &feed, &items, account::now()) {
 			Ok(id) => id,
 			Err(_) => {
 				return Ok(reply(
@@ -269,7 +269,7 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 			return Ok(reply(StatusCode::UNPROCESSABLE_ENTITY, "Choose a 5, 10 or 20 minute edition with at most 32 communities."));
 		}
 		let now = account::now();
-		if claim(&mut account::open_database()?, profile, &feed.slug, now).is_err() {
+		if claim(&mut *account::open_database()?, profile, &feed.slug, now).is_err() {
 			return Ok(reply(StatusCode::CONFLICT, "An edition was requested recently. Try again after 15 minutes."));
 		}
 		let policy = crate::listing::ListingPolicy::for_request(&req, Some(feed.communities.clone()), false, false)?;
@@ -304,7 +304,7 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 				format!("Unavailable: {}.", failures.join(", "))
 			}
 		);
-		match store(&mut account::open_database()?, profile, &feed.slug, &feed.name, minutes, &items, &coverage, now) {
+		match store(&mut *account::open_database()?, profile, &feed.slug, &feed.name, minutes, &items, &coverage, now) {
 			Ok(id) => id,
 			Err(WriteError::Full) => return Ok(reply(StatusCode::CONFLICT, "Edition capacity reached. Forget an old edition first.")),
 			Err(e) => return Err(format!("{e:?}")),
@@ -313,7 +313,7 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 		let id = v("id").parse().unwrap_or(0);
 		let revision = v("revision").parse().unwrap_or(-1);
 		let position = v("position").parse().unwrap_or(-1);
-		if let Err(e) = progress(&mut account::open_database()?, profile, id, revision, position, v("action")) {
+		if let Err(e) = progress(&mut *account::open_database()?, profile, id, revision, position, v("action")) {
 			return Ok(reply(
 				if e == WriteError::Conflict {
 					StatusCode::CONFLICT

@@ -341,7 +341,7 @@ pub fn from_thread(thread: &ThreadModel) -> Vec<ObservedComment> {
 pub fn observe_request(req: &Request<Body>, post: &str, thread: &ThreadModel) -> Result<(), String> {
 	let Some(profile) = account::context(req).map(|c| c.profile_id) else { return Ok(()) };
 	observe(
-		&mut account::open_database()?,
+		&mut *account::open_database()?,
 		profile,
 		post,
 		&from_thread(thread),
@@ -373,7 +373,7 @@ fn due_watches(db: &Connection, now: i64) -> Result<Vec<(i64, String)>, WriteErr
 /// One request per discussion per 15 minutes; claim before network work also
 /// bounds failures and competing manual/background refreshes.
 pub async fn refresh(profile: i64, post: &str) -> Result<(), String> {
-	let Some((prefs, community)) = claim(&mut account::open_database()?, profile, post, account::now()).map_err(|e| format!("{e:?}"))? else {
+	let Some((prefs, community)) = claim(&mut *account::open_database()?, profile, post, account::now()).map_err(|e| format!("{e:?}"))? else {
 		return Ok(());
 	};
 	let path = format!("/r/{community}/comments/{post}.json?raw_json=1&limit=100&sort=new");
@@ -701,7 +701,7 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 	let post = if v("post").is_empty() { v("post_id") } else { v("post") };
 	if v("action") == "ack" {
 		let result = acknowledge_seen(
-			&mut account::open_database()?,
+			&mut *account::open_database()?,
 			profile,
 			post,
 			v("revision").parse().unwrap_or(-1),

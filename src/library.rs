@@ -313,7 +313,7 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 			collection: String::new(),
 			revision: 0,
 		};
-		save(&mut account::open_database()?, profile, &item).map_err(|e| format!("{e:?}"))?
+		save(&mut *account::open_database()?, profile, &item).map_err(|e| format!("{e:?}"))?
 	} else if v("action") == "capture" {
 		let parts = v("source").split('/').collect::<Vec<_>>();
 		let post = parts.iter().position(|s| *s == "comments").and_then(|i| parts.get(i + 1)).copied().unwrap_or("");
@@ -374,7 +374,7 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 			collection: String::new(),
 			revision: 0,
 		};
-		match save(&mut account::open_database()?, profile, &item) {
+		match save(&mut *account::open_database()?, profile, &item) {
 			Ok(id) => id,
 			Err(_) => {
 				return Ok(reply(
@@ -389,7 +389,7 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 		}
 		let id = v("id").parse().unwrap_or(0);
 		if let Err(e) = annotate(
-			&mut account::open_database()?,
+			&mut *account::open_database()?,
 			profile,
 			id,
 			v("revision").parse().unwrap_or(-1),
@@ -417,7 +417,7 @@ pub async fn mutate(mut req: Request<Body>) -> Result<Response<Body>, String> {
 			Response::builder()
 				.header("content-type", "application/json")
 				.header("cache-control", "private, no-store")
-				.body(Body::from(serde_json::json!({"id":id,"revision": if id > 0 { get(&account::open_database()?, profile, id).map_err(|e| format!("{e:?}"))?.map_or(0, |item| item.revision) } else { 0 }}).to_string()))
+				.body(Body::from(serde_json::json!({"id":id,"revision": if id > 0 { get(&*account::open_database()?, profile, id).map_err(|e| format!("{e:?}"))?.map_or(0, |item| item.revision) } else { 0 }}).to_string()))
 				.unwrap(),
 		);
 	}

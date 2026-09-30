@@ -6,6 +6,35 @@ called out separately from local regressions.
 
 ## Unreleased
 
+### Security and operations
+
+- Count failed sign-ins per client address and username and per client
+  address, instead of per username alone. Repeated guesses no longer lock the
+  account owner out from other devices, and spraying many usernames no longer
+  blocks every sign-in.
+- Add `VALE_TRUSTED_PROXIES`. When set, Vale reads the client address from
+  `X-Forwarded-For` and the scheme from `X-Forwarded-Proto` only on
+  connections from those proxies. When unset, `X-Forwarded-For` is ignored and
+  `X-Forwarded-Proto` keeps its previous behavior.
+- Reject form submissions that carry no `Origin` header when fetch metadata
+  says they came from another site.
+- Video downloads through FFmpeg now use the same outbound proxy
+  (`HTTPS_PROXY`/`ALL_PROXY`/`NO_PROXY`) as Vale's other Reddit requests, and
+  refuse to connect directly when only a SOCKS proxy is configured.
+- Accept a `VALE_*` spelling for every `REDLIB_*` setting, including
+  `VALE_ADDRESS`.
+- Build release binaries and the container on Debian 12 instead of the
+  end-of-life Debian 11. Release binaries still run on glibc 2.31 or newer:
+  they are linked for that baseline with `cargo zigbuild`, and the build
+  verifies it. The Debian 11 security-mirror workaround is removed.
+- Record the upstream Redlib fork point in `UPSTREAM_BASE` and add
+  `scripts/upstream_status.sh` to report and apply upstream changes. See
+  [Tracking upstream](docs/UPSTREAM.md) and
+  [Reddit access fallbacks](docs/REDDIT_ACCESS.md).
+- Split the account and archive modules into focused submodules.
+- Reuse profile database connections and keep SQLite and password hashing
+  from stalling other requests on the same worker thread.
+
 ## 0.38.0 - 2026-09-13
 
 Vale brings saved material into one workspace and makes Reading a quieter

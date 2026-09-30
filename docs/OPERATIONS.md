@@ -11,7 +11,19 @@ file, or a support paste.
 Vale reads `redlib.toml` from its working directory and environment variables.
 An environment variable wins when the same setting is present in both places.
 `REDLIB_*` settings control the inherited Redlib engine; `VALE_*` settings
-control Vale profiles, sessions, archives, and paths.
+control Vale profiles, sessions, archives, and paths. Every `REDLIB_*` setting
+also accepts a `VALE_*` spelling (for example `VALE_FULL_URL` for
+`REDLIB_FULL_URL`, and `VALE_ADDRESS` for `REDLIB_ADDRESS`); when both are
+set, the `VALE_*` value wins. In `redlib.toml`, use only one spelling per
+setting: a file that names both fails to parse.
+
+### Outbound proxy
+
+Vale's Reddit requests follow the standard `HTTPS_PROXY`, `ALL_PROXY`, and
+`NO_PROXY` environment variables. Video downloads run FFmpeg, which Vale
+points at the same proxy. FFmpeg can only tunnel through a plain `http://`
+proxy, so with a SOCKS or `https://` proxy, video downloads fail with an
+explanation instead of connecting to Reddit directly.
 
 ### Settings used by Vale
 
@@ -25,6 +37,17 @@ control Vale profiles, sessions, archives, and paths.
 | `VALE_COOKIE_SECURE` | Secure session-cookie mode | Keep `on` behind HTTPS. Use `off` only for loopback HTTP development. |
 | `VALE_ARCHIVE_ITEM_MAX_BYTES` | Per-archive quota | Defaults to 1 GiB; accepted values are 64 MiB–4 GiB. |
 | `VALE_ARCHIVE_TOTAL_MAX_BYTES` | Complete archive-store quota | Defaults to 2 GiB; accepted values are 1 MiB–64 GiB. A value below 256 MiB explicitly disables custom profile budgets. |
+| `VALE_TRUSTED_PROXIES` | Reverse proxies whose `X-Forwarded-For`/`X-Forwarded-Proto` headers Vale believes, as comma-separated IP addresses or CIDR networks | Unset by default. Set it to the proxy's address (for Compose, the Docker network gateway or proxy container) so sign-in throttling sees real client addresses. Never list a network that untrusted clients can connect from. |
+
+### Sign-in throttling
+
+Failed sign-ins are counted per client address and username (8 per 15
+minutes) and per client address across all usernames (32 per 15 minutes).
+Someone guessing passwords is blocked without locking the account owner out
+from their own device. Vale only knows the real client address when it can see
+it: behind a reverse proxy, set `VALE_TRUSTED_PROXIES` to the proxy's address.
+Without it, every proxied client shares the proxy's address and Vale logs a
+warning the first time it sees an ignored `X-Forwarded-For` header.
 
 Saved-post metadata has non-configurable safety ceilings of 500 records per
 profile and 5,000 records per instance. At admission time Vale may prune the
@@ -312,7 +335,7 @@ triage.
 | Startup reports database permission errors | The service user cannot create or write the profile database/archive directory | Fix ownership and ACLs on the exact configured paths. Do not run Vale as root. |
 | Docker restart loses accounts or Saved items | The profile database/archive paths are not mounted on durable volumes | Stop the container, inspect `docker compose config`, restore from backup, and correct the mounts before logging in again. |
 | Feeds or posts show a Reddit/OAuth/rate-limit error | Reddit changed or throttled its unofficial retrieval path, or outbound HTTPS/DNS is blocked | Check external connectivity and logs without exposing tokens. Retry later and classify the result separately from local health. |
-| Video playback works but download fails | FFmpeg is missing, not executable, or the stream exceeded the bounded download limit | Install the release-supported FFmpeg package or mark video download unavailable. Do not remove the size/time bounds. |
+| Video playback works but download fails | FFmpeg is missing, not executable, the stream exceeded the bounded download limit, or the configured outbound proxy is not a plain `http://` proxy | Install the release-supported FFmpeg package or mark video download unavailable. Do not remove the size/time bounds. |
 | Video shows the audio-aware Retry panel | HLS is disabled, the browser/player could not prepare the playlist, or the selected stream did not advertise audio | Enable HLS in Settings and Retry. Apple browsers use their native HLS engine; other browsers use the bundled player and fall back to native HLS if media attachment stalls. If the panel remains, inspect the same-origin HLS response and browser support; do not add a silent MP4 fallback. |
 | Saved reports a partial archive | Reddit returned incomplete comments, an external page was sanitized, a resource was unavailable, or a configured quota was reached | Open the capture report and read its omissions. A partial archive is not a corrupted account; retry only after checking storage and network. |
 | Hide succeeds but a listing says Retry | Vale saved or verified the hidden state, but the bounded four-page snapshot could not complete | Keep the current cards, use the explicit Retry control, and check Reddit availability. Do not clear hidden state or broaden the listing bound as a workaround. |

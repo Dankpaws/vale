@@ -184,6 +184,10 @@ Redlib engine when describing the product.
   expectations.
 - [Publishing](docs/PUBLISHING.md) — clean-history requirements for the first
   public repository and release checks.
+- [Tracking upstream](docs/UPSTREAM.md) — the recorded Redlib fork point and
+  how to bring upstream fixes into Vale.
+- [Reddit access fallbacks](docs/REDDIT_ACCESS.md) — what to switch to if
+  Vale's current Reddit retrieval method stops working.
 - [Changelog](CHANGELOG.md) — user-visible release changes and compatibility
   notes.
 - [Third-party notices](THIRD_PARTY.md) — upstream Redlib, bundled assets, and
