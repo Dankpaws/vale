@@ -135,6 +135,9 @@ pub struct Config {
 
 	#[serde(rename = "VALE_ARCHIVE_TOTAL_MAX_BYTES")]
 	pub(crate) archive_total_max_bytes: Option<String>,
+
+	#[serde(rename = "VALE_TRUSTED_PROXIES")]
+	pub(crate) trusted_proxies: Option<String>,
 }
 
 impl Config {
@@ -191,6 +194,7 @@ impl Config {
 			archive_dir: parse("VALE_ARCHIVE_DIR"),
 			archive_item_max_bytes: parse("VALE_ARCHIVE_ITEM_MAX_BYTES"),
 			archive_total_max_bytes: parse("VALE_ARCHIVE_TOTAL_MAX_BYTES"),
+			trusted_proxies: parse("VALE_TRUSTED_PROXIES"),
 		}
 	}
 }
@@ -229,6 +233,7 @@ fn get_setting_from_config(name: &str, config: &Config) -> Option<String> {
 		"VALE_ARCHIVE_DIR" => config.archive_dir.clone(),
 		"VALE_ARCHIVE_ITEM_MAX_BYTES" => config.archive_item_max_bytes.clone(),
 		"VALE_ARCHIVE_TOTAL_MAX_BYTES" => config.archive_total_max_bytes.clone(),
+		"VALE_TRUSTED_PROXIES" => config.trusted_proxies.clone(),
 		_ => None,
 	}
 }

@@ -255,6 +255,17 @@ async fn main() {
 
 	info!("Evaluating config.");
 	LazyLock::force(&config::CONFIG);
+	if !address.is_loopback() {
+		let secure_cookies = config::get_setting("VALE_COOKIE_SECURE").is_none_or(|value| value != "off");
+		if secure_cookies && config::get_setting("REDLIB_FULL_URL").is_none_or(|value| value.trim().is_empty()) {
+			warn!("Vale is listening on a non-loopback address without REDLIB_FULL_URL. Set it to the public HTTPS origin so form submissions are checked against a fixed origin rather than request headers.");
+		}
+		if !redlib::net::trusted_proxies_configured() {
+			info!(
+				"VALE_TRUSTED_PROXIES is unset: X-Forwarded-For is ignored and X-Forwarded-Proto is accepted from any peer. Set it to your reverse proxy's address to restrict both."
+			);
+		}
+	}
 	if let Err(error) = account::initialize() {
 		eprintln!("Unable to initialize Vale profiles: {error}");
 		std::process::exit(1);

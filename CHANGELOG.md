@@ -6,6 +6,21 @@ called out separately from local regressions.
 
 ## Unreleased
 
+### Security and operations
+
+- Count failed sign-ins per client address and username and per client
+  address, instead of per username alone. Repeated guesses no longer lock the
+  account owner out from other devices, and spraying many usernames no longer
+  blocks every sign-in.
+- Add `VALE_TRUSTED_PROXIES`. When set, Vale reads the client address from
+  `X-Forwarded-For` and the scheme from `X-Forwarded-Proto` only on
+  connections from those proxies. When unset, `X-Forwarded-For` is ignored and
+  `X-Forwarded-Proto` keeps its previous behavior.
+- Reject form submissions that carry no `Origin` header when fetch metadata
+  says they came from another site.
+- Reuse profile database connections and keep SQLite and password hashing
+  from stalling other requests on the same worker thread.
+
 ## 0.38.0 - 2026-09-13
 
 Vale brings saved material into one workspace and makes Reading a quieter

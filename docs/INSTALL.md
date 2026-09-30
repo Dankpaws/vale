@@ -427,7 +427,21 @@ an existing service, back up and deliberately edit that file, restart
 checks below before admitting traffic.
 
 The proxy must preserve `Host`, set `X-Forwarded-Proto` to the client scheme,
-and enforce its own private-network allowlist. Do not put a password in the
+replace (not append to) `X-Forwarded-For` with the client address, and enforce
+its own private-network allowlist. Tell Vale which peer is the proxy so it
+believes those headers only from it:
+
+```dotenv
+# Same host: the proxy connects over loopback.
+VALE_TRUSTED_PROXIES=127.0.0.1,::1
+# Compose: the proxy reaches Vale through the Docker network gateway.
+# VALE_TRUSTED_PROXIES=172.16.0.0/12
+```
+
+`REDLIB_FULL_URL` is what Vale compares a form's `Origin` against. With it
+set, a correct origin is accepted even if proxy headers are wrong; without
+it, Vale rebuilds the origin from `Host` and `X-Forwarded-Proto`, and logs a
+startup warning when secure cookies are on. Do not put a password in the
 proxy configuration when Vale native accounts are enabled. Test the HTTPS
 origin from a client on the intended private network before sharing it.
 

@@ -1,5 +1,6 @@
 use crate::{
 	config::get_setting,
+	login_throttle,
 	server::{RequestExt, ResponseExt},
 	utils::{read_body_limited, redirect, safe_local_redirect, template, FeedGroup, Post, Preferences},
 };
@@ -18,25 +19,19 @@ use sha2::{Digest, Sha256};
 use std::{
 	collections::{HashMap, HashSet},
 	path::PathBuf,
-	sync::{LazyLock, Mutex},
-	time::{Duration as StdDuration, Instant},
+	sync::LazyLock,
 };
 use time::{Duration, OffsetDateTime};
 
 const SECURE_SESSION_COOKIE: &str = "__Host-vale_session";
 const DEVELOPMENT_SESSION_COOKIE: &str = "vale_session";
 const MAX_FORM_BYTES: usize = 64 * 1024;
-const MAX_LOGIN_THROTTLE_KEY_CHARS: usize = 64;
-const LOGIN_WINDOW: StdDuration = StdDuration::from_secs(15 * 60);
-const LOGIN_ATTEMPTS: usize = 8;
-const MAX_TRACKED_LOGIN_NAMES: usize = 1_024;
 const HISTORY_RETENTION_SECONDS: i64 = 180 * 24 * 60 * 60;
 const HISTORY_LIMIT: i64 = 5_000;
 const HIDDEN_POST_LIMIT: i64 = 20_000;
 const BROWSER_HIDDEN_POST_LIMIT: usize = 300;
 const HIDDEN_POSTS_COOKIE: &str = "hidden_posts";
 
-static LOGIN_FAILURES: LazyLock<Mutex<HashMap<String, Vec<Instant>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 static DUMMY_PASSWORD_HASH: LazyLock<String> = LazyLock::new(|| {
 	let salt = SaltString::encode_b64(b"vale-login-pad").expect("static login salt is valid");
 	Argon2::default()
@@ -553,7 +548,15 @@ fn mutation_is_same_origin_with_expected(request: &Request<Body>, expected: Opti
 		return false;
 	}
 	let Some(origin) = request.headers().get("origin").and_then(|value| value.to_str().ok()) else {
-		return true;
+		// Current browsers send Origin with every POST. A request without it is
+		// either a non-browser client (which holds no victim's cookies) or an
+		// old browser; accept it only when fetch metadata, if present, agrees
+		// that the request did not come from another site.
+		return request
+			.headers()
+			.get("sec-fetch-site")
+			.and_then(|value| value.to_str().ok())
+			.is_none_or(|value| value.eq_ignore_ascii_case("same-origin") || value.eq_ignore_ascii_case("none"));
 	};
 	let Some(origin) = parsed_origin(origin) else {
 		return false;
@@ -565,13 +568,7 @@ fn mutation_is_same_origin_with_expected(request: &Request<Body>, expected: Opti
 	let Some(host) = request.headers().get("host").and_then(|value| value.to_str().ok()) else {
 		return false;
 	};
-	let forwarded_scheme = request
-		.headers()
-		.get("x-forwarded-proto")
-		.and_then(|value| value.to_str().ok())
-		.and_then(|value| value.split(',').next())
-		.map(str::trim);
-	let scheme = request.uri().scheme_str().or(forwarded_scheme).unwrap_or("http");
+	let scheme = crate::net::request_scheme(request);
 	if !matches!(scheme, "http" | "https") {
 		return false;
 	}
@@ -1003,13 +1000,7 @@ fn request_origins(request: &Request<Body>) -> Vec<(String, String, u16)> {
 		origins.push(origin);
 	}
 	if let Some(host) = request.headers().get("host").and_then(|value| value.to_str().ok()) {
-		let forwarded_scheme = request
-			.headers()
-			.get("x-forwarded-proto")
-			.and_then(|value| value.to_str().ok())
-			.and_then(|value| value.split(',').next())
-			.map(str::trim);
-		let scheme = request.uri().scheme_str().or(forwarded_scheme).unwrap_or("http");
+		let scheme = crate::net::request_scheme(request);
 		if let Some(origin) = parsed_origin(&format!("{scheme}://{host}")) {
 			if !origins.contains(&origin) {
 				origins.push(origin);
@@ -1264,34 +1255,6 @@ fn form_value<'a>(form: &'a HashMap<String, String>, key: &str) -> &'a str {
 	form.get(key).map(String::as_str).unwrap_or_default()
 }
 
-fn login_throttle_key(username: &str) -> String {
-	username.chars().take(MAX_LOGIN_THROTTLE_KEY_CHARS).collect::<String>().to_ascii_lowercase()
-}
-
-fn login_allowed(username: &str) -> bool {
-	let mut attempts = LOGIN_FAILURES.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-	let now = Instant::now();
-	attempts.retain(|_, entries| {
-		entries.retain(|attempt| now.duration_since(*attempt) < LOGIN_WINDOW);
-		!entries.is_empty()
-	});
-	let username = login_throttle_key(username);
-	if !attempts.contains_key(&username) && attempts.len() >= MAX_TRACKED_LOGIN_NAMES {
-		return false;
-	}
-	let entries = attempts.entry(username).or_default();
-	entries.len() < LOGIN_ATTEMPTS
-}
-
-fn record_login_failure(username: &str) {
-	let mut attempts = LOGIN_FAILURES.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-	attempts.entry(login_throttle_key(username)).or_default().push(Instant::now());
-}
-
-fn clear_login_failures(username: &str) {
-	LOGIN_FAILURES.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).remove(&login_throttle_key(username));
-}
-
 fn find_user(connection: &Connection, username: &str) -> Result<Option<UserRecord>, String> {
 	connection
 		.query_row(
@@ -1401,11 +1364,12 @@ pub async fn login_get(request: Request<Body>) -> Result<Response<Body>, String>
 
 pub async fn login_post(request: Request<Body>) -> Result<Response<Body>, String> {
 	let preferences = Preferences::from_browser(&request);
+	let client = login_throttle::client_key(crate::net::client_ip(&request));
 	let form = read_form(request).await?;
 	let username = form_value(&form, "username").trim().to_ascii_lowercase();
 	let password = form_value(&form, "password");
 	let next = safe_next(form_value(&form, "next"));
-	if !login_allowed(&username) {
+	if !login_throttle::allowed(&client, &username) {
 		return Ok(render_login(
 			preferences,
 			next,
@@ -1418,7 +1382,7 @@ pub async fn login_post(request: Request<Body>) -> Result<Response<Body>, String
 	let encoded = user.as_ref().map(|user| user.password_hash.as_str()).unwrap_or(DUMMY_PASSWORD_HASH.as_str());
 	let valid = password_matches(password, encoded) && user.as_ref().is_some_and(|user| !user.is_disabled);
 	if !valid {
-		record_login_failure(&username);
+		login_throttle::record_failure(&client, &username);
 		return Ok(render_login(
 			preferences,
 			next,
@@ -1427,7 +1391,7 @@ pub async fn login_post(request: Request<Body>) -> Result<Response<Body>, String
 		));
 	}
 	let user = user.expect("valid login has a user");
-	clear_login_failures(&username);
+	login_throttle::record_success(&client, &username);
 	let token = insert_session(&connection, user.id)?;
 	let mut response = see_other(&next);
 	response.insert_cookie(session_cookie(token));
@@ -1929,12 +1893,6 @@ mod tests {
 	}
 
 	#[test]
-	fn login_throttle_keys_are_bounded() {
-		let username = "A".repeat(MAX_LOGIN_THROTTLE_KEY_CHARS + 32);
-		assert_eq!(login_throttle_key(&username).len(), MAX_LOGIN_THROTTLE_KEY_CHARS);
-	}
-
-	#[test]
 	fn password_hashes_are_salted_and_verifiable() {
 		let first = password_hash("correct horse battery staple").unwrap();
 		let second = password_hash("correct horse battery staple").unwrap();
@@ -2340,6 +2298,22 @@ mod tests {
 			.body(Body::empty())
 			.unwrap();
 		assert!(!mutation_is_same_origin_with_expected(&request, Some("http://127.0.0.1:3101")));
+	}
+
+	#[test]
+	fn form_mutations_without_origin_follow_fetch_metadata() {
+		let post = |fetch_site: Option<&str>| {
+			let mut builder = Request::builder().method(Method::POST).uri("/feeds").header("host", "127.0.0.1:3101");
+			if let Some(fetch_site) = fetch_site {
+				builder = builder.header("sec-fetch-site", fetch_site);
+			}
+			builder.body(Body::empty()).unwrap()
+		};
+		assert!(mutation_is_same_origin_with_expected(&post(None), None));
+		assert!(mutation_is_same_origin_with_expected(&post(Some("same-origin")), None));
+		assert!(mutation_is_same_origin_with_expected(&post(Some("none")), None));
+		assert!(!mutation_is_same_origin_with_expected(&post(Some("same-site")), None));
+		assert!(!mutation_is_same_origin_with_expected(&post(Some("cross-site")), None));
 	}
 
 	#[test]

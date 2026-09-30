@@ -316,7 +316,8 @@ impl Server {
 	}
 
 	pub fn listen(self, addr: &str) -> Boxed<Result<(), hyper::Error>> {
-		let make_svc = make_service_fn(move |_conn| {
+		let make_svc = make_service_fn(move |connection: &hyper::server::conn::AddrStream| {
+			let peer = crate::net::PeerAddr(connection.remote_addr());
 			// For correct borrowing, these values need to be borrowed
 			let router = self.router.clone();
 			let default_headers = self.default_headers.clone();
@@ -325,6 +326,7 @@ impl Server {
 			// this connection.
 			async move {
 				Ok::<_, String>(service_fn(move |mut req: Request<Body>| {
+					req.extensions_mut().insert(peer);
 					let req_headers = req.headers().clone();
 					let def_headers = default_headers.clone();
 					if req.uri().path_and_query().map_or(1, |value| value.as_str().len()) > MAX_REQUEST_TARGET_BYTES {

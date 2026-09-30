@@ -25,6 +25,17 @@ control Vale profiles, sessions, archives, and paths.
 | `VALE_COOKIE_SECURE` | Secure session-cookie mode | Keep `on` behind HTTPS. Use `off` only for loopback HTTP development. |
 | `VALE_ARCHIVE_ITEM_MAX_BYTES` | Per-archive quota | Defaults to 1 GiB; accepted values are 64 MiB–4 GiB. |
 | `VALE_ARCHIVE_TOTAL_MAX_BYTES` | Complete archive-store quota | Defaults to 2 GiB; accepted values are 1 MiB–64 GiB. A value below 256 MiB explicitly disables custom profile budgets. |
+| `VALE_TRUSTED_PROXIES` | Reverse proxies whose `X-Forwarded-For`/`X-Forwarded-Proto` headers Vale believes, as comma-separated IP addresses or CIDR networks | Unset by default. Set it to the proxy's address (for Compose, the Docker network gateway or proxy container) so sign-in throttling sees real client addresses. Never list a network that untrusted clients can connect from. |
+
+### Sign-in throttling
+
+Failed sign-ins are counted per client address and username (8 per 15
+minutes) and per client address across all usernames (32 per 15 minutes).
+Someone guessing passwords is blocked without locking the account owner out
+from their own device. Vale only knows the real client address when it can see
+it: behind a reverse proxy, set `VALE_TRUSTED_PROXIES` to the proxy's address.
+Without it, every proxied client shares the proxy's address and Vale logs a
+warning the first time it sees an ignored `X-Forwarded-For` header.
 
 Saved-post metadata has non-configurable safety ceilings of 500 records per
 profile and 5,000 records per instance. At admission time Vale may prune the
