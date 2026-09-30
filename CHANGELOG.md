@@ -23,6 +23,10 @@ called out separately from local regressions.
   refuse to connect directly when only a SOCKS proxy is configured.
 - Accept a `VALE_*` spelling for every `REDLIB_*` setting, including
   `VALE_ADDRESS`.
+- Build release binaries and the container on Debian 12 instead of the
+  end-of-life Debian 11. Release binaries still run on glibc 2.31 or newer:
+  they are linked for that baseline with `cargo zigbuild`, and the build
+  verifies it. The Debian 11 security-mirror workaround is removed.
 - Reuse profile database connections and keep SQLite and password hashing
   from stalling other requests on the same worker thread.
 

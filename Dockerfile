@@ -6,23 +6,24 @@
 ARG RUST_VERSION=1.98.0
 # Multi-architecture manifest digests are reviewed release inputs. Dependabot
 # proposes digest updates without silently floating either base image.
-ARG RUST_IMAGE=rust:1.98.0-bullseye@sha256:4730e387a220a08a365c77da3096544dde214f9d796c16284d4be45438cad4a9
+ARG RUST_IMAGE=rust:1.98.0-bookworm@sha256:82150a52ec202c1b14d7817e14516c392bb7f5cfebd88f1ed531cb37ebd39922
 ARG DEBIAN_IMAGE=debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 
 FROM ${RUST_IMAGE} AS builder
 
 ARG RUST_VERSION
 ARG VALE_BUILD_COMMIT=dev
+# Release binaries keep the documented glibc 2.31 baseline (Debian 11,
+# Ubuntu 20.04, RHEL 9) although the builder runs a supported Debian release:
+# cargo-zigbuild links against glibc 2.31 symbol versions with Zig's linker.
+ARG GLIBC_BASELINE=2.31
+ARG ZIG_WHEEL_VERSION=0.13.0.post1
+ARG ZIG_WHEEL_SHA256_AMD64=5ff0f2cb0d583b4f94820909612043f62e4d1d9a8bed77ceec088a01fc2ef015
+ARG ZIG_WHEEL_SHA256_ARM64=b2ab883f27e915bc34266ff6627f565b5cc7b3c566b5a91f633b4174d52119a9
+ARG CARGO_ZIGBUILD_VERSION=0.23.4
 ENV RUSTUP_TOOLCHAIN=${RUST_VERSION}
 
-# Either official security mirror can cache a false 404 for encoded versions.
-# APT's native mirror transport retries the other origin and verifies signatures
-# and package hashes normally. Prefer security.debian.org, then the Debian CDN.
-RUN printf '%s\tpriority:%s\n' \
-        'https://security.debian.org/debian-security/' 1 \
-        'https://deb.debian.org/debian-security/' 2 > /etc/apt/vale-security-mirrors \
-    && sed -i 's|http://deb.debian.org/debian-security|mirror+file:/etc/apt/vale-security-mirrors|g' /etc/apt/sources.list \
-    && apt-get update \
+RUN apt-get update \
     && apt-get install --no-install-recommends --yes \
         ca-certificates \
         binutils \
@@ -34,7 +35,27 @@ RUN printf '%s\tpriority:%s\n' \
         nasm \
         perl \
         pkg-config \
+        python3 \
     && rm -rf /var/lib/apt/lists/*
+
+# Zig comes from its hash-pinned PyPI wheel (a zip holding the official
+# release), which covers both amd64 and arm64 from one reviewed source.
+RUN set -eu; \
+    case "$(uname -m)" in \
+        x86_64) wheel_tag=manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64; digest=$ZIG_WHEEL_SHA256_AMD64; path=e1/15/88cd364004181c9db4e4b295df2184edbaed1433226cb315c2e058c00c4a ;; \
+        aarch64) wheel_tag=manylinux_2_17_aarch64.manylinux2014_aarch64.musllinux_1_1_aarch64; digest=$ZIG_WHEEL_SHA256_ARM64; path=49/a3/7b0998dee834ef22c6c72c4e3c5c4d7dde06a990acf10ab2db5f59d1d31c ;; \
+        *) echo "unsupported build architecture $(uname -m)" >&2; exit 1 ;; \
+    esac; \
+    wheel="ziglang-${ZIG_WHEEL_VERSION}-py3-none-${wheel_tag}.whl"; \
+    curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+        --output "/tmp/$wheel" "https://files.pythonhosted.org/packages/$path/$wheel"; \
+    echo "$digest  /tmp/$wheel" | sha256sum --check --strict; \
+    python3 -m zipfile -e "/tmp/$wheel" /opt/zig-wheel; \
+    chmod 0755 /opt/zig-wheel/ziglang/zig; \
+    ln -s /opt/zig-wheel/ziglang/zig /usr/local/bin/zig; \
+    rm "/tmp/$wheel"; \
+    zig version; \
+    cargo install --locked --version "$CARGO_ZIGBUILD_VERSION" cargo-zigbuild
 
 WORKDIR /src
 
@@ -42,13 +63,16 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock README.md rust-toolchain.toml ./
 RUN mkdir src \
     && printf 'fn main() {}\n' > src/main.rs \
-    && cargo build --release --locked --bin redlib \
+    && cargo zigbuild --release --locked --bin redlib --target "$(uname -m)-unknown-linux-gnu.${GLIBC_BASELINE}" \
     && rm -rf src
 
 COPY . ./
-RUN VALE_BUILD_COMMIT="$VALE_BUILD_COMMIT" cargo build --release --locked --bin redlib \
-    && strip --strip-all target/release/redlib \
-    && install -D -m 0755 target/release/redlib /out/vale
+RUN VALE_BUILD_COMMIT="$VALE_BUILD_COMMIT" cargo zigbuild --release --locked --bin redlib --target "$(uname -m)-unknown-linux-gnu.${GLIBC_BASELINE}" \
+    && binary="target/$(uname -m)-unknown-linux-gnu/release/redlib" \
+    && newest="$(objdump -T "$binary" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -n 1)" \
+    && [ "$(printf '%s\n' "$newest" "$GLIBC_BASELINE" | sort -V | tail -n 1)" = "$GLIBC_BASELINE" ] \
+    && strip --strip-all "$binary" \
+    && install -D -m 0755 "$binary" /out/vale
 
 FROM ${DEBIAN_IMAGE} AS runtime
 
