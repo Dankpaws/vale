@@ -55,7 +55,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes shellcheck
           bash -n install.sh
-          shellcheck install.sh contrib/vale-admin scripts/update_hls_js.sh scripts/update_rust_licenses.sh
+          shellcheck install.sh contrib/vale-admin scripts/update_hls_js.sh scripts/update_rust_licenses.sh scripts/upstream_status.sh
           docker compose --env-file .env.example config --quiet
 
       - name: Install the pinned license generator

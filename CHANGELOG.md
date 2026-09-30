@@ -27,6 +27,11 @@ called out separately from local regressions.
   end-of-life Debian 11. Release binaries still run on glibc 2.31 or newer:
   they are linked for that baseline with `cargo zigbuild`, and the build
   verifies it. The Debian 11 security-mirror workaround is removed.
+- Record the upstream Redlib fork point in `UPSTREAM_BASE` and add
+  `scripts/upstream_status.sh` to report and apply upstream changes. See
+  [Tracking upstream](docs/UPSTREAM.md) and
+  [Reddit access fallbacks](docs/REDDIT_ACCESS.md).
+- Split the account and archive modules into focused submodules.
 - Reuse profile database connections and keep SQLite and password hashing
   from stalling other requests on the same worker thread.
 
