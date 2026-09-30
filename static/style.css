@@ -1772,3 +1772,135 @@ body.vale-ui { --focus:var(--text); }
 .reading-home button,.reading-home select,.reading-update-actions a,.reading-resume-row>a {min-height:44px;}
 .reading-edition-option {padding-block:22px;display:flex;flex-wrap:wrap;align-items:center;gap:16px;}
 @media(max-width:520px){.reading-feed-picker label{width:100%;}.reading-feed-picker select{flex:1;}.reading-resume-row{align-items:start;}.reading-resume-row h2{font-size:20px;}}
+
+/* Density pass. Spacing and control sizes come from these tokens. Pointer: fine
+   devices get compact rows; touch keeps 44px targets. Keep this block last. */
+:root {
+	--control-h: 44px;
+	--row-h: 44px;
+	--pad-post: 16px;
+	--fs-title: 1.25rem;
+	--fs-body: 1.0625rem;
+}
+@media (pointer: fine) {
+	:root { --control-h: 32px; --row-h: 32px; --pad-post: 10px; --fs-title: 1.1875rem; --fs-body: 1rem; --header-height: 52px; }
+	button, input[type="submit"], .primary-button, .quiet-button, .subscribe, .unsubscribe, .filter, .unfilter, .import, .copy,
+	input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]), select, .commentQuery,
+	#timeframe, #sort_select, #commentSortSelect, #sort_submit,
+	.reading-actions button, .reading-actions select, .history-item form button,
+	.media_download_control, .comment-search-actions .quiet-button, .deeper_replies,
+	.preview-discussion, .reading-tool .quiet-button, .icon-button,
+	.saved-item-actions button, .saved-item-actions a, .saved-search button,
+	.post-save-actions button, .post-save-actions summary { min-height: var(--control-h); }
+	button, input[type="submit"], .primary-button, .quiet-button { padding-inline: 12px; border-radius: 6px; font-size: 0.875rem; }
+	input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]), select, textarea { padding: 5px 9px; border-radius: 6px; font-size: 0.9rem; }
+	input[type="checkbox"], input[type="radio"] { width: 16px; height: 16px; }
+	.nav-link, .account-control, .header-search-mobile, .brand { min-height: 40px; }
+	.app-header-inner { gap: 14px; }
+	.header-search { height: 34px; }
+	.header-search input[type="search"] { min-height: 32px !important; }
+	.brand-mark-frame, .brand-mark { width: 30px; height: 30px; flex-basis: 30px; }
+	.brand-name { font-size: 1.3rem; }
+	.nav-link { padding: 0 10px; font-size: 0.9375rem; }
+	.page-hero { padding-block: 16px 14px; }
+	.section-heading h2 { font-size: 1.1rem; }
+	.eyebrow { margin-bottom: 4px; }
+}
+
+.app-canvas { padding-top: calc(var(--header-height) + 20px + env(safe-area-inset-top)); padding-bottom: 40px; }
+.app-footer { padding-top: 24px; }
+
+/* Feed: hero, switcher, sort */
+@media (min-width: 1121px) {
+	.feed-page { gap: 0 24px; grid-template-columns: minmax(0, 1fr) 260px; }
+	.feed-context { padding: 12px; top: calc(var(--header-height) + 12px); }
+	.has-feed-switcher > .feed-context { margin-top: 12px; }
+	.feed-page > aside:not(.feed-context) { margin-top: 12px; }
+}
+@media (min-width: 561px) {
+	.feed-page > #column_one { padding: 0 20px 12px; }
+	.is-home-feed .feed-hero { padding: 6px 20px 0; }
+	.feed-switcher, .feed-switcher-tabs { gap: 20px; }
+	.has-feed-switcher .feed-switcher { min-height: 48px; padding-right: 120px; }
+	.has-feed-switcher > #column_one > #sort { top: -47px; right: 20px; min-height: 48px; }
+	.feed-switcher-tab { min-height: 44px; font-size: 1.375rem; }
+}
+.has-feed-switcher .feed-sort-select { min-height: var(--control-h); }
+.context-card { padding: 12px; }
+.compact-heading h2 { font-size: 0.9375rem; }
+.community-list { gap: 0; margin: 8px -6px; }
+.community-list a { padding: 4px 6px; font-size: 0.875rem; }
+.context-link { padding-top: 8px; }
+.editorial-feed-tools summary, .editorial-reading-tools summary, .editorial-row-tools summary,
+.editorial-storage summary, .editorial-source-updates summary { min-height: var(--control-h); padding-block: 6px; font-size: 0.875rem; }
+
+/* Feed rows: title + one meta line + one action line */
+.post:not(.highlighted) { padding: var(--pad-post) 0 calc(var(--pad-post) - 2px); row-gap: 0; align-content: start; }
+@media (min-width: 561px) {
+	.post:not(.highlighted):has(> .post_thumbnail) { grid-template-columns: minmax(0, 1fr) clamp(112px, 11vw, 148px); gap: 0 20px; grid-template-rows: auto auto auto 1fr; }
+}
+.post:not(.highlighted) .post_title { margin: 3px 0 2px; font-size: var(--fs-title); line-height: 1.3; }
+.post_labels { margin: 5px 0 0; }
+.post_labels + .post_title { margin-top: 3px; }
+.post_header { font-size: 0.8125rem; gap: 4px 6px; }
+.post_thumbnail { grid-row: 1 / 5; align-self: start; aspect-ratio: 3 / 2; margin-top: 2px; }
+.post_footer { min-height: var(--row-h); gap: 0 14px !important; font-size: 0.875rem; }
+.post_primary_action, .post_inline_toggle, .post_comments { min-height: var(--row-h); }
+.post_hide { min-width: 0; min-height: 26px; padding: 0 10px; border-radius: 4px; font-size: 0.8125rem; }
+.post-hide-form { align-items: center; }
+.post_inline_panel { padding-top: 12px; margin-top: 4px; }
+.post_inline_text { font-size: var(--fs-body); line-height: 1.6; }
+.content-group { margin-top: 4px; }
+
+/* Discussion */
+.post-save-actions { margin: 8px 0 12px; }
+.post-page-layout { padding-top: 20px; gap: 24px; grid-template-columns: minmax(0, 1fr) 220px; }
+@media (min-width: 1121px) { body:not([data-reading-sidebar="right"]) .post-page-layout { grid-template-columns: 220px minmax(0, 1fr); } }
+.post-reading { padding: clamp(16px, 2vw, 28px); }
+.post.highlighted { padding-bottom: 16px; }
+.post.highlighted .post_title { margin-bottom: 12px; font-size: clamp(1.5rem, 2.2vw, 2rem); line-height: 1.2; }
+.post_detail_meta { margin-bottom: 6px; }
+.post_body { font-size: var(--fs-body); line-height: 1.6; }
+.post.highlighted #post_url { margin: 8px 0; padding: 7px 11px; }
+.post_media_content, .gallery { margin: 14px 0; }
+.post.highlighted > .post_footer { margin-top: 6px; }
+#commentQueryForms { margin: 14px 0 4px; padding: 6px 0; }
+.reading-context { min-height: 38px; padding: 5px 10px; }
+.reading-tool, .reading-tool-button, .reading-tool-link, .reading-tools .reading-save .quiet-button,
+.reading-tools [data-reading-command] button, .reading-tools .reading-navigation button, .reading-place-icon { min-height: 34px; }
+.reading-tool .quiet-button { min-height: 30px; }
+.reading-tools .reading-group-label { padding: 8px 11px 3px; font-size: 0.75rem; }
+.reading-tools .reading-mode-field { padding: 8px 11px; }
+.thread { padding: 0; }
+.comment { grid-template-columns: 28px minmax(0, 1fr); padding: 8px 0 4px; }
+.comment_rail { width: 28px; min-width: 28px; }
+.comment_left { width: 28px; min-width: 28px; height: 28px; min-height: 28px; }
+.comment_replies_toggle { min-height: 30px; min-width: 0; padding: 0 8px 0 0; font-size: 0.8125rem; }
+.comment_data { min-height: 20px; font-size: 0.8125rem; }
+.comment_body { padding: 0 0 2px; font-size: var(--fs-body); line-height: 1.55; }
+.comment_body p { margin: 0.15em 0 0.45em; }
+.comment_body blockquote { margin: 0.4em 0; }
+.comment-search-summary { padding: 8px 12px; margin: 6px 0 10px; }
+.thread_nav { margin: 4px 0; }
+.deeper_replies { padding: 0 8px; }
+
+@media (pointer: coarse) {
+	.comment { grid-template-columns: 44px minmax(0, 1fr); }
+	.comment_rail { width: 44px; min-width: 44px; }
+	.comment_left { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+	.post_hide { min-height: 44px; }
+	.reading-tool, .reading-tool-button, .reading-tool-link, .reading-tools .reading-save .quiet-button,
+	.reading-tools [data-reading-command] button, .reading-tools .reading-navigation button, .reading-place-icon { min-height: 44px; }
+}
+
+@media (max-width: 1120px) {
+	.post-page-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+	.app-canvas { padding-top: calc(var(--header-height) + 20px + env(safe-area-inset-top)); }
+	.post:not(.highlighted) { padding: 12px 0 8px; }
+	.post:not(.highlighted) .post_title { font-size: 1.125rem; }
+	.post_thumbnail { aspect-ratio: 16 / 9; max-height: 180px; margin: 6px 0 4px; }
+	.comment_body { font-size: 1rem; }
+	.post.highlighted .post_title { font-size: 1.5rem; }
+}
